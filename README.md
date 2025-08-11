@@ -8,46 +8,6 @@ StableAvatar: Infinite-Length Audio-Driven Avatar Video Generation
 <br/>
 [<sup>1</sup>Fudan University; <sup>2</sup>Microsoft Research Asia; <sup>3</sup>Xi'an Jiaotong University; <sup>4</sup>Hunyuan, Tencent Inc]
 
-
-
-
-https://github.com/user-attachments/assets/eac3ec34-1999-4a41-81fc-5f0a296a44b5
-
-https://github.com/user-attachments/assets/b5902ac4-8188-4da8-b9e6-6df280690ed1
-
-https://github.com/user-attachments/assets/87faa5c1-a118-4a03-a071-45f18e87e6a0
-
-
-https://github.com/user-attachments/assets/531eb413-8993-4f8f-9804-e3c5ec5794d4
-
-
-https://github.com/user-attachments/assets/cdc603e2-df46-4cf8-a14e-1575053f996f
-
-
-
-https://github.com/user-attachments/assets/7022dc93-f705-46e5-b8fc-3a3fb755795c
-
-
-
-https://github.com/user-attachments/assets/0ba059eb-ff6f-4d94-80e6-f758c613b737
-
-
-
-
-https://github.com/user-attachments/assets/03e6c1df-85c6-448d-b40d-aacb8add4e45
-
-
-
-https://github.com/user-attachments/assets/90b78154-dda0-4eaa-91fd-b5485b718a7f
-
-
-
-
-
-https://github.com/user-attachments/assets/90691318-311e-40b9-9bd9-62db83ab1492
-
-
-
 <table border="0" style="width: 100%; text-align: left; margin-top: 20px;">
   <tr>
       <td>
