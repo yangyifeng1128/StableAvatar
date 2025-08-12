@@ -164,6 +164,11 @@ We provide 6 cases in different resolution settings in `path/StableAvatar/exampl
 Setting `--GPU_memory_mode` to `model_cpu_offload` can significantly cut GPU memory usage, reducing it by roughly half compared to `model_full_load` mode.
 
 - If you have multiple Gpus, you can run Multi-GPU inference to speed up by modifying "--ulysses_degree" and "--ring_degree" in `inference.sh`. For example, if you have 8 GPUs, you can set `--ulysses_degree=4` and `--ring_degree=2`. Notably, you have to ensure ulysses_degree*ring_degree=total GPU number/world-size. Moreover, you can also add `--fsdp_dit` in `inference.sh` to activate FSDP in DiT to further reduce GPU memory consumption.
+You can fun the following command:
+```
+bash multiple_gpu_inference.sh
+```
+In my setting, 4 GPUs are utilized for inference.
 
 The video synthesized by StableAvatar is without audio. If you want to obtain the high quality MP4 file with audio, we recommend you to leverage ffmpeg on the <b>output_path</b> as follows:
 ```
