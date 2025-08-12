@@ -384,7 +384,7 @@ If you find our work useful, <b>please consider giving a star ⭐ to this github
 @article{tu2025stableavatar,
   title={StableAvatar: Infinite-Length Audio-Driven Avatar Video Generation},
   author={Tu, Shuyuan and Pan, Yueming and Huang, Yinming and Han, Xintong and Xing, Zhen and Dai, Qi and Luo, Chong and Wu, Zuxuan and Jiang Yu-Gang},
-  journal={arXiv preprint arXiv:},
+  journal={arXiv preprint arXiv:2508.08248},
   year={2025}
 }
 ```
