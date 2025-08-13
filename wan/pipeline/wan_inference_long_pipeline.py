@@ -746,7 +746,7 @@ class WanI2VTalkingInferenceLongPipeline(DiffusionPipeline):
                         )
                     if do_classifier_free_guidance:
                         noise_pred_uncond, noise_pred_drop_audio, noise_pred_cond = noise_pred.chunk(3)
-                        noise_pred = noise_pred_uncond + text_guide_scale * (noise_pred_drop_audio - noise_pred_uncond) + audio_guide_scale * (noise_pred_cond - noise_pred_drop_audio)
+                        noise_pred = noise_pred_uncond + audio_guide_scale * (noise_pred_drop_audio - noise_pred_uncond) + text_guide_scale * (noise_pred_cond - noise_pred_drop_audio)
                     latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
                     torch.cuda.empty_cache()
                     if index_start != 0 and i != 0:
@@ -792,4 +792,5 @@ class WanI2VTalkingInferenceLongPipeline(DiffusionPipeline):
         if not return_dict:
             video = torch.from_numpy(video)
         return WanI2VPipelineTalkingInferenceLongOutput(videos=video)
+
 
