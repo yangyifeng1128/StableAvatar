@@ -20,5 +20,5 @@ CUDA_VISIBLE_DEVICES=0 python inference.py \
   --overlap_window_length=5 \
   --clip_sample_n_frames=81 \
   --GPU_memory_mode="model_full_load" \
-  --sample_text_guide_scale=5.0 \
-  --sample_audio_guide_scale=3.0
+  --sample_text_guide_scale=3.0 \
+  --sample_audio_guide_scale=5.0
