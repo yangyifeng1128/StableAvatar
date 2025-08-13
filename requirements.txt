@@ -4,12 +4,12 @@ einops
 safetensors
 timm
 tomesd
-torch==2.6.0
+torch==2.7.0
 torchdiffeq
 torchsde
 decord
 datasets
-torchvision==0.21.0
+torchvision==0.22.0
 opencv-python>=4.9.0.80
 diffusers==0.30.1
 transformers==4.51.3
@@ -33,4 +33,4 @@ tensorboard
 beautifulsoup4
 ftfy
 librosa
-torchaudio==2.6.0
+torchaudio==2.7.0
