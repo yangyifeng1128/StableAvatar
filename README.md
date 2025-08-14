@@ -68,6 +68,7 @@ We observe that the main reason preventing existing models from generating long 
 To address this, StableAvatar introduces a novel Time-step-aware Audio Adapter that prevents error accumulation via time-step-aware modulation. During inference, we propose a novel Audio Native Guidance Mechanism to further enhance the audio synchronization by leveraging the diffusion’s own evolving joint audio-latent prediction as a dynamic guidance signal. To enhance the smoothness of the infinite-length videos, we introduce a Dynamic Weighted Sliding-window Strategy that fuses latent over time. Experiments on benchmarks show the effectiveness of StableAvatar both qualitatively and quantitatively. 
 
 ## News
+* `[2025-8-13]`:🔥 Added changes to run StableAvatar on the new Blackwell series Nvidia chips, including the RTX 6000 Pro.
 * `[2025-8-11]`:🔥 The project page, code, technical report and [a basic model checkpoint](https://huggingface.co/FrancisRing/StableAvatar/tree/main) are released. Further lora training codes, the evaluation dataset and StableAvatar-pro will be released very soon. Stay tuned!
 
 ## 🛠️ To-Do List
@@ -90,6 +91,15 @@ For the basic version of the model checkpoint (Wan2.1-1.3B-based), it supports g
 
 ```
 pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.1.1 --index-url https://download.pytorch.org/whl/cu124
+pip install -r requirements.txt
+# Optional to install flash_attn to accelerate attention computation
+pip install flash_attn
+```
+
+### 🧱 Environment setup for Blackwell series chips
+
+```
+pip install torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 --index-url https://download.pytorch.org/whl/cu128
 pip install -r requirements.txt
 # Optional to install flash_attn to accelerate attention computation
 pip install flash_attn
