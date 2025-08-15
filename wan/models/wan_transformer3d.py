@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional, Union
 
 import numpy as np
 import torch
-import torch.cuda.amp as amp
+import torch.amp as amp
 import torch.nn as nn
 from diffusers.configuration_utils import ConfigMixin, register_to_config
 from diffusers.loaders.single_file_model import FromOriginalModelMixin
@@ -216,7 +216,7 @@ def sinusoidal_embedding_1d(dim, position):
     return x
 
 
-@amp.autocast(enabled=False)
+@amp.autocast('cuda', enabled=False)
 def rope_params(max_seq_len, dim, theta=10000):
     assert dim % 2 == 0
     freqs = torch.outer(
@@ -227,7 +227,7 @@ def rope_params(max_seq_len, dim, theta=10000):
     return freqs
 
 # modified from https://github.com/thu-ml/RIFLEx/blob/main/riflex_utils.py
-@amp.autocast(enabled=False)
+@amp.autocast('cuda', enabled=False)
 def get_1d_rotary_pos_embed_riflex(
     pos: Union[np.ndarray, int],
     dim: int,
@@ -286,7 +286,7 @@ def get_1d_rotary_pos_embed_riflex(
         freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64     # [S, D/2]
         return freqs_cis
 
-@amp.autocast(enabled=False)
+@amp.autocast('cuda', enabled=False)
 def rope_apply(x, grid_sizes, freqs):
     n, c = x.size(2), x.size(3) // 2
 
@@ -998,7 +998,7 @@ class WanTransformer3DModel(ModelMixin, ConfigMixin, FromOriginalModelMixin):
         # negative_face_masks = torch.cat([torch.cat([u, u.new_zeros(1, seq_len - u.size(1), u.size(2))], dim=1) for u in negative_face_masks])
 
         # time embeddings
-        with amp.autocast(dtype=torch.float32):
+        with amp.autocast('cuda', dtype=torch.float32):
             e = self.time_embedding(sinusoidal_embedding_1d(self.freq_dim, t).float())
             e0 = self.time_projection(e).unflatten(1, (6, self.dim))
             if motion_embeddings is not None:

@@ -226,10 +226,10 @@ class WanI2VTalkingInferenceLongPipeline(DiffusionPipeline):
             wav2vec=wav2vec,
         )
 
-        self.video_processor = VideoProcessor(vae_scale_factor=self.vae.spacial_compression_ratio)
-        self.image_processor = VaeImageProcessor(vae_scale_factor=self.vae.spacial_compression_ratio)
+        self.video_processor = VideoProcessor(vae_scale_factor=self.vae.config.spacial_compression_ratio)
+        self.image_processor = VaeImageProcessor(vae_scale_factor=self.vae.config.spacial_compression_ratio)
         self.mask_processor = VaeImageProcessor(
-            vae_scale_factor=self.vae.spacial_compression_ratio, do_normalize=False, do_binarize=True,
+            vae_scale_factor=self.vae.config.spacial_compression_ratio, do_normalize=False, do_binarize=True,
             do_convert_grayscale=True
         )
 
@@ -372,9 +372,9 @@ class WanI2VTalkingInferenceLongPipeline(DiffusionPipeline):
         shape = (
             batch_size,
             num_channels_latents,
-            (num_frames - 1) // self.vae.temporal_compression_ratio + 1,
-            height // self.vae.spacial_compression_ratio,
-            width // self.vae.spacial_compression_ratio,
+            (num_frames - 1) // self.vae.config.temporal_compression_ratio + 1,
+            height // self.vae.config.spacial_compression_ratio,
+            width // self.vae.config.spacial_compression_ratio,
         )
 
         if latents is None:
@@ -728,11 +728,11 @@ class WanI2VTalkingInferenceLongPipeline(DiffusionPipeline):
                     if hasattr(self.scheduler, "scale_model_input"):
                         latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
                     timestep = t.expand(latent_model_input.shape[0])
-                    target_shape = (self.vae.latent_channels, (num_frames - 1) // self.vae.temporal_compression_ratio + 1, width // self.vae.spacial_compression_ratio, height // self.vae.spacial_compression_ratio)
+                    target_shape = (self.vae.config.latent_channels, (num_frames - 1) // self.vae.config.temporal_compression_ratio + 1, width // self.vae.config.spacial_compression_ratio, height // self.vae.config.spacial_compression_ratio)
                     seq_len = math.ceil((target_shape[2] * target_shape[3]) / (self.transformer.config.patch_size[1] * self.transformer.config.patch_size[2]) * target_shape[1])
                     if text_guide_scale is not None and audio_guide_scale is not None:
                         sub_vocal_embeddings = torch.cat([torch.zeros_like(sub_vocal_embeddings), sub_vocal_embeddings, sub_vocal_embeddings], dim=0)
-                    with torch.cuda.amp.autocast(dtype=weight_dtype):
+                    with torch.amp.autocast('cuda', dtype=weight_dtype):
                         legal_compressed_frames_num = latents.size()[2]
                         noise_pred = self.transformer(
                             x=latent_model_input,
