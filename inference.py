@@ -390,6 +390,12 @@ def parse_args():
         type=int,
         default=81,
     )
+    parser.add_argument(
+        "--overlapping_weight_scheme",
+        type=str,
+        default="uniform",
+        help="[uniform, log]"
+    )
 
     args = parser.parse_args()
     # env_local_rank = int(os.environ.get("LOCAL_RANK", -1))
@@ -557,6 +563,7 @@ def main():
             cond_file_path=args.validation_reference_path,
             seed=args.seed,
             overlap_window_length=args.overlap_window_length,
+            overlapping_weight_scheme=args.overlapping_weight_scheme
         ).videos
         del pipeline
         saved_frames_dir = os.path.join(args.output_dir, "animated_images")
