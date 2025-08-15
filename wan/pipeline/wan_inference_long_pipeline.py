@@ -226,10 +226,10 @@ class WanI2VTalkingInferenceLongPipeline(DiffusionPipeline):
             wav2vec=wav2vec,
         )
 
-        self.video_processor = VideoProcessor(vae_scale_factor=self.vae.config.spacial_compression_ratio)
-        self.image_processor = VaeImageProcessor(vae_scale_factor=self.vae.config.spacial_compression_ratio)
+        self.video_processor = VideoProcessor(vae_scale_factor=self.vae.spacial_compression_ratio)
+        self.image_processor = VaeImageProcessor(vae_scale_factor=self.vae.spacial_compression_ratio)
         self.mask_processor = VaeImageProcessor(
-            vae_scale_factor=self.vae.config.spacial_compression_ratio, do_normalize=False, do_binarize=True,
+            vae_scale_factor=self.vae.spacial_compression_ratio, do_normalize=False, do_binarize=True,
             do_convert_grayscale=True
         )
 
@@ -372,9 +372,9 @@ class WanI2VTalkingInferenceLongPipeline(DiffusionPipeline):
         shape = (
             batch_size,
             num_channels_latents,
-            (num_frames - 1) // self.vae.config.temporal_compression_ratio + 1,
-            height // self.vae.config.spacial_compression_ratio,
-            width // self.vae.config.spacial_compression_ratio,
+            (num_frames - 1) // self.vae.temporal_compression_ratio + 1,
+            height // self.vae.spacial_compression_ratio,
+            width // self.vae.spacial_compression_ratio,
         )
 
         if latents is None:
@@ -575,6 +575,7 @@ class WanI2VTalkingInferenceLongPipeline(DiffusionPipeline):
             cond_file_path=None,
             seed=None,
             overlap_window_length=None,
+            overlapping_weight_scheme="uniform",
     ) -> Union[WanI2VPipelineTalkingInferenceLongOutput, Tuple]:
         """
         Function invoked when calling the pipeline for generation.
@@ -728,11 +729,11 @@ class WanI2VTalkingInferenceLongPipeline(DiffusionPipeline):
                     if hasattr(self.scheduler, "scale_model_input"):
                         latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
                     timestep = t.expand(latent_model_input.shape[0])
-                    target_shape = (self.vae.config.latent_channels, (num_frames - 1) // self.vae.config.temporal_compression_ratio + 1, width // self.vae.config.spacial_compression_ratio, height // self.vae.config.spacial_compression_ratio)
+                    target_shape = (self.vae.latent_channels, (num_frames - 1) // self.vae.temporal_compression_ratio + 1, width // self.vae.spacial_compression_ratio, height // self.vae.spacial_compression_ratio)
                     seq_len = math.ceil((target_shape[2] * target_shape[3]) / (self.transformer.config.patch_size[1] * self.transformer.config.patch_size[2]) * target_shape[1])
                     if text_guide_scale is not None and audio_guide_scale is not None:
                         sub_vocal_embeddings = torch.cat([torch.zeros_like(sub_vocal_embeddings), sub_vocal_embeddings, sub_vocal_embeddings], dim=0)
-                    with torch.amp.autocast('cuda', dtype=weight_dtype):
+                    with torch.cuda.amp.autocast(dtype=weight_dtype):
                         legal_compressed_frames_num = latents.size()[2]
                         noise_pred = self.transformer(
                             x=latent_model_input,
@@ -751,8 +752,16 @@ class WanI2VTalkingInferenceLongPipeline(DiffusionPipeline):
                     torch.cuda.empty_cache()
                     if index_start != 0 and i != 0:
                         overlap_window_weight = torch.zeros(1, 1, overlap_window_length, 1, 1).to(device=latents.device, dtype=latents.dtype)
-                        for j in range(overlap_window_length):
-                            overlap_window_weight[:, :, j] = j / (overlap_window_length-1)
+                        if overlapping_weight_scheme == "uniform":
+                            for j in range(overlap_window_length):
+                                overlap_window_weight[:, :, j] = j / (overlap_window_length-1)
+                        elif overlapping_weight_scheme == "log":
+                            init_weight = torch.linspace(0, 1, overlap_window_length)
+                            init_weight = torch.log1p(init_weight * (torch.exp(torch.tensor(1.0)) - 1))
+                            norm_weights = (init_weight - init_weight.min()) / (init_weight.max() - init_weight.min())
+                            for j in range(overlap_window_length):
+                                overlap_window_weight[:, :, j] = norm_weights[j]
+
                         overlap_idx_list_start = [ii % latents.shape[2] for ii in range(0, overlap_window_length)]
                         overlap_idx_list_end = [ii % latents_all.shape[2] for ii in range(index_previous_end-overlap_window_length, index_previous_end)]
                         latents[:, :, overlap_idx_list_start] = latents[:, :, overlap_idx_list_start] * overlap_window_weight + pred_latents[:, :, overlap_idx_list_end] * (1-overlap_window_weight)
@@ -792,5 +801,4 @@ class WanI2VTalkingInferenceLongPipeline(DiffusionPipeline):
         if not return_dict:
             video = torch.from_numpy(video)
         return WanI2VPipelineTalkingInferenceLongOutput(videos=video)
-
 
