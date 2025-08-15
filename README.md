@@ -68,6 +68,7 @@ We observe that the main reason preventing existing models from generating long 
 To address this, StableAvatar introduces a novel Time-step-aware Audio Adapter that prevents error accumulation via time-step-aware modulation. During inference, we propose a novel Audio Native Guidance Mechanism to further enhance the audio synchronization by leveraging the diffusion’s own evolving joint audio-latent prediction as a dynamic guidance signal. To enhance the smoothness of the infinite-length videos, we introduce a Dynamic Weighted Sliding-window Strategy that fuses latent over time. Experiments on benchmarks show the effectiveness of StableAvatar both qualitatively and quantitatively. 
 
 ## News
+* `[2025-8-15]`:🔥 StableAvatar can run on Gradio Interface. Thanks @[@gluttony-10](https://space.bilibili.com/893892) for the contribution!
 * `[2025-8-15]`:🔥 StableAvatar can run on [ComfyUI](https://github.com/smthemex/ComfyUI_StableAvatar). Thanks @[smthemex](https://github.com/smthemex) for the contribution.
 * `[2025-8-13]`:🔥 Added changes to run StableAvatar on the new Blackwell series Nvidia chips, including the RTX 6000 Pro.
 * `[2025-8-11]`:🔥 The project page, code, technical report and [a basic model checkpoint](https://huggingface.co/FrancisRing/StableAvatar/tree/main) are released. Further lora training codes, the evaluation dataset and StableAvatar-pro will be released very soon. Stay tuned!
@@ -165,6 +166,11 @@ Prompts are also very important. It is recommended to `[Description of first fra
 "--sample_steps", "--overlap_window_length", and "--clip_sample_n_frames" refer to the total number of inference steps, the overlapping context length between two context windows, and the synthesized frame number in a batch/context window, respectively. 
 Notably, the recommended `--sample_steps` range is [30-50], more steps bring higher quality. The recommended `--overlap_window_length` range is [5-15], as longer overlapping length results in higher quality and slower inference speed.
 "--sample_text_guide_scale" and "--sample_audio_guide_scale" are Classify-Free-Guidance scale of text prompt and audio. The recommended range for prompt and audio cfg is `[3-6]`. You can increase the audio cfg to facilitate the lip synchronization with audio.
+
+Additionally, you can also run the following command to launch a Gradio interface:
+```
+python app.py
+```
 
 We provide 6 cases in different resolution settings in `path/StableAvatar/examples` for validation. ❤️❤️Please feel free to try it out and enjoy the endless entertainment of infinite-length avatar video generation❤️❤️!
 
