@@ -69,6 +69,7 @@ We observe that the main reason preventing existing models from generating long 
 To address this, StableAvatar introduces a novel Time-step-aware Audio Adapter that prevents error accumulation via time-step-aware modulation. During inference, we propose a novel Audio Native Guidance Mechanism to further enhance the audio synchronization by leveraging the diffusion’s own evolving joint audio-latent prediction as a dynamic guidance signal. To enhance the smoothness of the infinite-length videos, we introduce a Dynamic Weighted Sliding-window Strategy that fuses latent over time. Experiments on benchmarks show the effectiveness of StableAvatar both qualitatively and quantitatively. 
 
 ## News
+* `[2025-8-16]`:🔥 We release the finetuning codes and lora training/finetuning codes! Other codes will be public as soon as possible. Stay tuned!
 * `[2025-8-15]`:🔥 StableAvatar can run on Gradio Interface. Thanks @[gluttony-10](https://space.bilibili.com/893892) for the contribution!
 * `[2025-8-15]`:🔥 StableAvatar can run on [ComfyUI](https://github.com/smthemex/ComfyUI_StableAvatar). Thanks @[smthemex](https://github.com/smthemex) for the contribution.
 * `[2025-8-13]`:🔥 Added changes to run StableAvatar on the new Blackwell series Nvidia chips, including the RTX 6000 Pro.
@@ -80,9 +81,9 @@ To address this, StableAvatar introduces a novel Time-step-aware Audio Adapter t
 - [x] Data Pre-Processing Code (Audio Extraction)
 - [x] Data Pre-Processing Code (Vocal Separation)
 - [x] Training Code
-- [ ] Lora Training Code (Before 2025.8.17)
-- [ ] Lora Finetuning Code (Before 2025.8.17)
-- [ ] Full Finetuning Code (Before 2025.8.17)
+- [x] Full Finetuning Code
+- [x] Lora Training Code
+- [x] Lora Finetuning Code
 - [ ] Inference Code with Audio Native Guidance
 - [ ] StableAvatar-pro
 
@@ -388,8 +389,33 @@ bash train_14B.sh
 We utilize deepspeed stage-2 to train Wan2.1-14B-based StableAvatar. The GPU configuration can be modified in `path/StableAvatar/accelerate_config/accelerate_config_machine_14B_multiple.yaml`.
 The deepspeed optimization configuration and deepspeed scheduler configuration are in `path/StableAvatar/deepspeed_config/zero_stage2_config.json`.
 Notably, we observe that Wan2.1-1.3B-based StableAvatar is already capable of synthesizing infinite-length high quality avatar videos. The Wan2.1-14B backbone significantly increase the inference latency and GPU memory consumption during training, indicating limited efficiency in terms of performance-to-resource ratio.
+You can also run the following commands to perform lora training:
+```
+# Training StableAvatar-1.3B on a mixed resolution setting (480x832 and 832x480) in a single machine
+bash train_1B_rec_vec_lora.sh
+# Training StableAvatar-1.3B on a mixed resolution setting (480x832 and 832x480) in multiple machines
+bash train_1B_rec_vec_lora_64.sh
+# Lora-Training StableAvatar-14B on a mixed resolution setting (480x832, 832x480, and 512x512) in multiple machines
+bash train_14B_lora.sh
+```
+You can modify `--rank` and `--network_alpha` to control the quality of your lora training/finetuning.
 
 If you want to train 720P Wan2.1-1.3B-based or Wan2.1-14B-based StableAvatar, you can directly modify the height and width of the dataloader (480p-->720p) in `train_1B_square.py`/`train_1B_vec_rec.py`/`train_14B.py`.
+
+### 🧱 Model Finetuning
+You can fun the following commands to fully finetune StableAvatar:
+```
+# Finetuning StableAvatar on a mixed resolution setting (480x832 and 832x480) in a single machine
+bash finetune_1B_rec_vec.sh
+# Finetuning StableAvatar on a mixed resolution setting (480x832 and 832x480) in multiple machines
+bash finetune_1B_rec_vec_64.sh
+```
+You can run the following commands to perform lora finetuning:
+```
+# Lora-Finetuning StableAvatar-1.3B on a mixed resolution setting (480x832 and 832x480) in a single machine
+bash finetune_1B_rec_vec_lora.sh
+```
+You can modify `--rank` and `--network_alpha` to control the quality of your lora training/finetuning.
 
 ### 🧱 VRAM requirement and Runtime
 
