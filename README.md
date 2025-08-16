@@ -389,6 +389,7 @@ bash train_14B.sh
 We utilize deepspeed stage-2 to train Wan2.1-14B-based StableAvatar. The GPU configuration can be modified in `path/StableAvatar/accelerate_config/accelerate_config_machine_14B_multiple.yaml`.
 The deepspeed optimization configuration and deepspeed scheduler configuration are in `path/StableAvatar/deepspeed_config/zero_stage2_config.json`.
 Notably, we observe that Wan2.1-1.3B-based StableAvatar is already capable of synthesizing infinite-length high quality avatar videos. The Wan2.1-14B backbone significantly increase the inference latency and GPU memory consumption during training, indicating limited efficiency in terms of performance-to-resource ratio.
+
 You can also run the following commands to perform lora training:
 ```
 # Training StableAvatar-1.3B on a mixed resolution setting (480x832 and 832x480) in a single machine
@@ -403,17 +404,17 @@ You can modify `--rank` and `--network_alpha` to control the quality of your lor
 If you want to train 720P Wan2.1-1.3B-based or Wan2.1-14B-based StableAvatar, you can directly modify the height and width of the dataloader (480p-->720p) in `train_1B_square.py`/`train_1B_vec_rec.py`/`train_14B.py`.
 
 ### 🧱 Model Finetuning
-You can fun the following commands to fully finetune StableAvatar:
+Regarding fully finetuning StableAvatar, you can add `--transformer_path="path/StableAvatar/checkpoints/StableAvatar-1.3B/transformer3d-square.pt"` to the `train_1B_rec_vec.sh` or `train_1B_rec_vec_64.sh`:
 ```
 # Finetuning StableAvatar on a mixed resolution setting (480x832 and 832x480) in a single machine
-bash finetune_1B_rec_vec.sh
+bash train_1B_rec_vec.sh
 # Finetuning StableAvatar on a mixed resolution setting (480x832 and 832x480) in multiple machines
-bash finetune_1B_rec_vec_64.sh
+bash train_1B_rec_vec_64.sh
 ```
-You can run the following commands to perform lora finetuning:
+In terms of lora finetuning StableAvatar, you can add `--transformer_path="path/StableAvatar/checkpoints/StableAvatar-1.3B/transformer3d-square.pt"` to the `train_1B_rec_vec_lora.sh`:
 ```
 # Lora-Finetuning StableAvatar-1.3B on a mixed resolution setting (480x832 and 832x480) in a single machine
-bash finetune_1B_rec_vec_lora.sh
+bash train_1B_rec_vec_lora.sh
 ```
 You can modify `--rank` and `--network_alpha` to control the quality of your lora training/finetuning.
 
