@@ -29,30 +29,31 @@ from diffusers.utils import check_min_version, deprecate, is_wandb_available
 from diffusers.utils.torch_utils import is_compiled_module
 from einops import rearrange
 from omegaconf import OmegaConf
+from packaging import version
 from PIL import Image
 from torch import nn
 from torch.utils.data import RandomSampler
 from torch.utils.tensorboard import SummaryWriter
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer
+from transformers.utils import ContextManagers
 import datasets
+from transformers import Wav2Vec2Model, Wav2Vec2Processor
 import librosa
 from pathlib import Path
 import imageio
 import torchvision
-from transformers import Wav2Vec2Model, Wav2Vec2Processor
 
+from musicfm.model.musicfm_25hz import MusicFM25Hz
 from wan.dataset.talking_video_dataset_fantasy import LargeScaleTalkingFantasyVideos
-
-from wan.models.wan_fantasy_transformer3d_1B import WanTransformer3DFantasyModel
+from wan.models.wan_fantasy_transformer3d_14B import WanTransformer3DFantasy14BModel
 from wan.models.wan_text_encoder import WanT5EncoderModel
 from wan.models.wan_vae import AutoencoderKLWan
 from wan.models.wan_image_encoder import CLIPModel
-from wan.pipeline.wan_inference_pipeline_fantasy import WanI2VFantasyPipeline
 
 from wan.utils.discrete_sampler import DiscreteSampling
+from wan.utils.lora_utils import create_network
 from wan.utils.utils import get_image_to_video_latent, save_videos_grid
-
 
 def filter_kwargs(cls, kwargs):
     import inspect
@@ -190,13 +191,13 @@ def save_videos_grid_png_and_mp4(videos: torch.Tensor, path: str, rescale=False,
 
 
 def log_validation(vae, text_encoder, tokenizer, clip_image_encoder, transformer3d, config, args, accelerator, weight_dtype,
-                   global_step, height, width, wav2vec_processor, wav2vec):
+                   global_step, height, width, wav2vec_feature_extractor, wav2vec_model, musicfm):
 
     logger.info("Running validation... ")
     scheduler = FlowMatchEulerDiscreteScheduler(
         **filter_kwargs(FlowMatchEulerDiscreteScheduler, OmegaConf.to_container(config['scheduler_kwargs']))
     )
-    pipeline = WanI2VFantasyPipeline(
+    pipeline = WanI2VInnerPipeline(
         vae=accelerator.unwrap_model(vae).to(weight_dtype),
         text_encoder=accelerator.unwrap_model(text_encoder),
         tokenizer=tokenizer,
@@ -216,28 +217,72 @@ def log_validation(vae, text_encoder, tokenizer, clip_image_encoder, transformer
             latent_frames = (video_length - 1) // vae.config.temporal_compression_ratio + 1
 
             torch.cuda.empty_cache()
-            wav2vec.to(accelerator.device)
-            fps = 30
-            duration = librosa.get_duration(filename=args.validation_driven_audio_path)
-            num_frames = min(int(fps * duration // 4) * 4 + 5, 81)
-            if num_frames != 81:
-                print(1/0)
-            sr = 16000
-            audio_input, sample_rate = librosa.load(args.validation_driven_audio_path, sr=sr)  # 采样率为 16kHz
-            start_time = 0
-            end_time = num_frames / fps
-            start_sample = int(start_time * sr)
-            end_sample = int(end_time * sr)
-            try:
-                audio_segment = audio_input[start_sample:end_sample]
-            except:
-                audio_segment = audio_input
-            vocal_input_values = wav2vec_processor(audio_segment, sampling_rate=sample_rate, return_tensors="pt").input_values.to(accelerator.device)
-            with torch.no_grad():
-                vocal_input_values = wav2vec(vocal_input_values).last_hidden_state
+            wav2vec_model.to(accelerator.device)
+            musicfm.to(accelerator.device)
 
-            wav2vec.to("cpu")
+            vocal_sample_rate = 16000
+            fps = 30
+            vocal_speech_array, vocal_sampling_rate = librosa.load(args.validation_driven_audio_path, sr=vocal_sample_rate)
+            vocal_feature = np.squeeze(accelerator.unwrap_model(wav2vec_feature_extractor)(vocal_speech_array, sampling_rate=vocal_sample_rate).input_values)
+            vocal_seq_len = int(len(vocal_feature) / vocal_sample_rate * fps)
+            clip_length = args.video_sample_n_frames
+            vocal_feature = torch.from_numpy(vocal_feature).float()
+            if clip_length > 0 and vocal_seq_len % clip_length != 0:
+                vocal_feature = torch.nn.functional.pad(vocal_feature, (
+                    0, int((clip_length - vocal_seq_len % clip_length) * (vocal_sample_rate // fps))), 'constant', 0.0)
+                vocal_seq_len += clip_length - vocal_seq_len % clip_length
+            vocal_feature = vocal_feature.unsqueeze(0)
+            with torch.no_grad():
+                vocal_embeddings = accelerator.unwrap_model(wav2vec_model)(vocal_feature.to(accelerator.device), seq_len=vocal_seq_len, output_hidden_states=True)
+            assert len(vocal_embeddings) > 0, "Fail to extract audio embedding"
+            vocal_embeddings = torch.stack(vocal_embeddings.hidden_states[1:], dim=1).squeeze(0)
+            vocal_embeddings = rearrange(vocal_embeddings, "b s d -> s b d")
+            concatenated_tensors = []
+            for i in range(vocal_embeddings.shape[0]):
+                vectors_to_concat = [vocal_embeddings[max(min(i + j, vocal_embeddings.shape[0] - 1), 0)] for j in range(-2, 3)]
+                concatenated_tensors.append(torch.stack(vectors_to_concat, dim=0))
+            vocal_embeddings = torch.stack(concatenated_tensors, dim=0)
+
+            audio_sample_rate = 24000
+            audio_speech_array, audio_sampling_rate = librosa.load(args.validation_driven_audio_path, sr=audio_sample_rate)
+            selected_audio_array = audio_speech_array.reshape(1, -1)
+            selected_audio_tensor = torch.from_numpy(selected_audio_array).float().reshape(1, -1)
+            audio_embeddings = accelerator.unwrap_model(musicfm).get_latent(selected_audio_tensor.to(accelerator.device), layer_ix=7)
+            audio_embeddings = nn.AdaptiveAvgPool1d(video_length)(audio_embeddings.transpose(1, 2))
+            audio_embeddings = audio_embeddings.transpose(1, 2)
+            audio_embeddings = audio_embeddings.squeeze(0)
+            concatenated_tensors = []
+            for i in range(audio_embeddings.shape[0]):
+                vectors_to_concat = [audio_embeddings[max(min(i + j, audio_embeddings.shape[0] - 1), 0)] for j in range(-2, 3)]
+                concatenated_tensors.append(torch.stack(vectors_to_concat, dim=0))
+            audio_embeddings = torch.stack(concatenated_tensors, dim=0)
+            audio_embeddings = audio_embeddings.unsqueeze(0)
+
+            wav2vec_model.to("cpu")
+            musicfm.to("cpu")
             torch.cuda.empty_cache()
+
+            window_size = 0.2
+            half_window = window_size / 2
+            audio_strength_features = []
+            for i in range(video_length):
+                center_time = i / fps
+                start_sample = int(max((center_time - half_window) * audio_sample_rate, 0))
+                end_sample = int(min((center_time + half_window) * audio_sample_rate, len(audio_speech_array)))
+                y_slice = audio_speech_array[start_sample:end_sample]
+                if len(y_slice) < int(window_size * audio_sample_rate * 0.5):
+                    # padding if slice too short
+                    y_slice = np.pad(y_slice, (0, int(window_size * audio_sample_rate) - len(y_slice)), mode='constant')
+                rms = librosa.feature.rms(y=y_slice).flatten()
+                rms_feat = np.array([np.mean(rms), np.std(rms)])
+                mfcc = librosa.feature.mfcc(y=y_slice, sr=audio_sample_rate, n_mfcc=13)
+                mfcc_mean = np.mean(mfcc, axis=1)
+                mfcc_std = np.std(mfcc, axis=1)
+                mfcc_feat = np.concatenate([mfcc_mean, mfcc_std])
+                frame_feat = np.concatenate([rms_feat, mfcc_feat])
+                audio_strength_features.append(frame_feat)
+            audio_strength_features = np.stack(audio_strength_features)
+            audio_strength_features = torch.from_numpy(audio_strength_features).float()
 
             input_video, input_video_mask, clip_image = get_image_to_video_latent(args.validation_reference_path, None, video_length=video_length, sample_size=[height, width])
 
@@ -256,17 +301,14 @@ def log_validation(vae, text_encoder, tokenizer, clip_image_encoder, transformer
                 video=input_video,
                 mask_video=input_video_mask,
                 clip_image=clip_image,
-                prompt_cfg_scale=5.0,
-                audio_cfg_scale=5.0,
-                vocal_input_values=vocal_input_values,
+                vocal_embeddings=vocal_embeddings,
+                audio_embeddings=audio_embeddings,
+                audio_strength_features=audio_strength_features,
+                multiple_cfg_scale=[6.0, 2.0, 4.5],
             ).videos
             os.makedirs(os.path.join(args.output_dir, "sample"), exist_ok=True)
-
-            # save_frames_path = os.path.join(args.output_dir, f"sample/sample-{global_step}-frames")
-            # os.makedirs(save_frames_path, exist_ok=True)
             fps = 16
             video_path = os.path.join(args.output_dir, f"sample/sample-{global_step}.mp4")
-            # save_videos_grid_png_and_mp4(sample, os.path.join(args.output_dir, f"sample/sample-{global_step}.mp4"), n_rows=sample.shape[0], fps=fps, save_frames_path=save_frames_path)
             save_videos_grid(sample, video_path, fps=fps)
 
     del pipeline
@@ -314,6 +356,14 @@ def parse_args():
         type=str,
         default=None,
         help="Variant of the model files of the pretrained model identifier from huggingface.co/models, 'e.g.' fp16",
+    )
+    parser.add_argument(
+        "--train_data_dir",
+        type=str,
+        default=None,
+        help=(
+            "A folder containing the training data. "
+        ),
     )
     parser.add_argument(
         "--max_train_samples",
@@ -698,22 +748,6 @@ def parse_args():
         type=str,
     )
     parser.add_argument(
-        "--initial_grad_norm_ratio",
-        type=int,
-        default=5,
-        help=(
-            'The initial gradient is relative to the multiple of the max_grad_norm. '
-        ),
-    )
-    parser.add_argument(
-        "--abnormal_norm_clip_start",
-        type=int,
-        default=1000,
-        help=(
-            'When do we start doing additional processing on abnormal gradients. '
-        ),
-    )
-    parser.add_argument(
         "--train_data_rec_dir",
         type=str,
         default=None,
@@ -762,20 +796,16 @@ class DeepSpeedWrapperModel(nn.Module):
 
 
 class CombinedModel(nn.Module):
-    def __init__(self, transformer3d, lora_network, vocal_projector_model, audio_projector_model, motion_bucket_model):
+    def __init__(self, transformer3d, lora_network):
         super().__init__()
         self.transformer3d = transformer3d
         self.lora_network = lora_network
-        self.vocal_projector_model = vocal_projector_model
-        self.audio_projector_model = audio_projector_model
-        self.motion_bucket_model = motion_bucket_model
 
 # Function for unwrapping if model was compiled with `torch.compile`.
 def unwrap_model(accelerator, model):
     model = accelerator.unwrap_model(model)
     model = model._orig_mod if is_compiled_module(model) else model
     return model
-
 
 def main():
     args = parse_args()
@@ -850,40 +880,24 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(os.path.join(args.pretrained_model_name_or_path, config['text_encoder_kwargs'].get('tokenizer_subpath', 'tokenizer')), )
 
     text_encoder = WanT5EncoderModel.from_pretrained(
-        os.path.join(args.pretrained_model_name_or_path,
-                     config['text_encoder_kwargs'].get('text_encoder_subpath', 'text_encoder')),
+        os.path.join(args.pretrained_model_name_or_path, config['text_encoder_kwargs'].get('text_encoder_subpath', 'text_encoder')),
         additional_kwargs=OmegaConf.to_container(config['text_encoder_kwargs']),
         low_cpu_mem_usage=True,
         torch_dtype=weight_dtype,
     )
     text_encoder = text_encoder.eval()
-    # Get Vae
     vae = AutoencoderKLWan.from_pretrained(
         os.path.join(args.pretrained_model_name_or_path, config['vae_kwargs'].get('vae_subpath', 'vae')),
         additional_kwargs=OmegaConf.to_container(config['vae_kwargs']),
     )
-
     wav2vec_processor = Wav2Vec2Processor.from_pretrained(args.pretrained_wav2vec_path)
     wav2vec = Wav2Vec2Model.from_pretrained(args.pretrained_wav2vec_path).to("cpu")
 
-
-    transformer3d = WanTransformer3DFantasyModel.from_pretrained(
+    transformer3d = WanTransformer3DFantasy14BModel.from_pretrained(
         os.path.join(args.pretrained_model_name_or_path,
                      config['transformer_additional_kwargs'].get('transformer_subpath', 'transformer')),
         transformer_additional_kwargs=OmegaConf.to_container(config['transformer_additional_kwargs']),
     ).to(weight_dtype)
-
-    if args.transformer_path is not None:
-        print(f"From checkpoint: {args.transformer_path}")
-        state_dict = torch.load(args.transformer_path, map_location="cpu")
-        state_dict = state_dict["state_dict"] if "state_dict" in state_dict else state_dict
-        m, u = transformer3d.load_state_dict(state_dict, strict=False)
-        print(f"missing keys: {len(m)}, unexpected keys: {len(u)}")
-
-    # 14B should be audio_context_dim=2048
-    # 1.3B should be audio_context_dim=1024
-    # vocal_projector = FantasyTalkingVocalConditionModel(audio_in_dim=768, audio_proj_dim=2048)
-    # vocal_projector = FantasyTalkingVocalConditionModel(audio_in_dim=768, audio_proj_dim=1024)
 
     clip_image_encoder = CLIPModel.from_pretrained(os.path.join(args.pretrained_model_name_or_path, config['image_encoder_kwargs'].get('image_encoder_subpath', 'image_encoder')), )
     clip_image_encoder = clip_image_encoder.eval()
@@ -894,7 +908,18 @@ def main():
     clip_image_encoder.requires_grad_(False)
     wav2vec.requires_grad_(False)
 
-    transformer3d.train()
+    lora_network = create_network(
+        1.0,
+        args.rank,
+        args.network_alpha,
+        transformer3d,
+        neuron_dropout=None,
+    )
+    lora_network.apply_to(transformer3d, True)
+    combined_model = CombinedModel(
+        transformer3d=transformer3d,
+        lora_network=lora_network,
+    )
 
     if args.gradient_checkpointing:
         transformer3d.enable_gradient_checkpointing()
@@ -929,17 +954,15 @@ def main():
     else:
         optimizer_cls = torch.optim.AdamW
 
-    trainable_params_optim = []
-    for name, para in transformer3d.named_parameters():
-        if "vocal_projector" in name or "audio_projector" in name or "vocal" in name or "audio" in name or "attn" in name or "blocks" in name:
+    print("Add network parameters")
+    trainable_params = list(filter(lambda p: p.requires_grad, combined_model.lora_network.parameters()))
+    trainable_params_optim = combined_model.lora_network.prepare_optimizer_params(args.learning_rate, args.learning_rate)
+    for name, para in combined_model.transformer3d.named_parameters():
+        if "vocal" in name or "audio" in name or "vocal_projector" in name or "audio_projector" in name:
             para.requires_grad = True
             trainable_params_optim.append({"params": para, "lr": args.learning_rate})
-    # for name, para in vocal_projector.named_parameters():
-    #     para.requires_grad = True
-    #     trainable_params_optim.append({"params": para, "lr": args.learning_rate})
+            trainable_params.append(para)
 
-    trainable_params = list(filter(lambda p: p.requires_grad, transformer3d.parameters()))
-    # trainable_params += list(filter(lambda p: p.requires_grad, vocal_projector.parameters()))
 
     if args.use_came:
         optimizer = optimizer_cls(
@@ -949,6 +972,15 @@ def main():
             betas=(0.9, 0.999, 0.9999),
             eps=(1e-30, 1e-16)
         )
+    elif accelerator.state.deepspeed_plugin is not None and "optimizer" in accelerator.state.deepspeed_plugin.deepspeed_config:
+        from accelerate.utils import DummyOptim
+        optimizer = DummyOptim(
+            trainable_params_optim,
+            lr=args.learning_rate,
+            betas=(args.adam_beta1, args.adam_beta2),
+            eps=args.adam_epsilon,
+            weight_decay=args.adam_weight_decay,
+        )
     else:
         optimizer = optimizer_cls(
             trainable_params_optim,
@@ -957,11 +989,14 @@ def main():
             weight_decay=args.adam_weight_decay,
             eps=args.adam_epsilon,
         )
+        print(1 / 0)
 
     sample_n_frames_bucket_interval = vae.config.temporal_compression_ratio
 
     train_rec_dataset = LargeScaleTalkingFantasyVideos(
         txt_path=args.train_data_rec_dir,
+        # width=1280,
+        # height=720,
         width=832,
         height=480,
         n_sample_frames=args.video_sample_n_frames,
@@ -980,8 +1015,30 @@ def main():
         num_workers=args.dataloader_num_workers,
         shuffle=True,
     )
+    train_square_dataset = LargeScaleTalkingFantasyVideos(
+        txt_path=args.train_data_square_dir,
+        width=512,
+        height=512,
+        n_sample_frames=args.video_sample_n_frames,
+        wav2vec_processor=wav2vec_processor,
+        sample_frame_rate=1,
+        only_last_features=False,
+        vocal_sample_rate=16000,
+        audio_sample_rate=24000,
+        enable_inpaint=True,
+        vae_stride=(4, 8, 8),
+        patch_size=(1, 2, 2)
+    )
+    train_square_dataloader = torch.utils.data.DataLoader(
+        train_square_dataset,
+        batch_size=args.train_batch_size,
+        num_workers=args.dataloader_num_workers,
+        shuffle=True,
+    )
     train_vec_dataset = LargeScaleTalkingFantasyVideos(
         txt_path=args.train_data_vec_dir,
+        # width=720,
+        # height=1280,
         width=480,
         height=832,
         n_sample_frames=args.video_sample_n_frames,
@@ -1002,27 +1059,34 @@ def main():
     )
 
     overrode_max_train_steps = False
-    num_update_steps_per_epoch = math.ceil((len(train_rec_dataloader)+len(train_vec_dataloader)) / args.gradient_accumulation_steps)
+    num_update_steps_per_epoch = math.ceil((len(train_rec_dataloader)+len(train_square_dataloader)+len(train_vec_dataloader)) / args.gradient_accumulation_steps)
     if args.max_train_steps is None:
         args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
         overrode_max_train_steps = True
 
-    lr_scheduler = get_scheduler(
-        args.lr_scheduler,
-        optimizer=optimizer,
-        num_warmup_steps=args.lr_warmup_steps * accelerator.num_processes,
-        num_training_steps=args.max_train_steps * accelerator.num_processes,
-    )
+    if accelerator.state.deepspeed_plugin is not None and "scheduler" in accelerator.state.deepspeed_plugin.deepspeed_config:
+        from accelerate.utils import DummyScheduler
+        lr_scheduler = DummyScheduler(
+            optimizer=optimizer,
+            warmup_num_steps=args.lr_warmup_steps * accelerator.num_processes,
+            total_num_steps=args.max_train_steps * accelerator.num_processes,
+        )
+    else:
+        lr_scheduler = get_scheduler(
+            args.lr_scheduler,
+            optimizer=optimizer,
+            num_warmup_steps=args.lr_warmup_steps * accelerator.num_processes,
+            num_training_steps=args.max_train_steps * accelerator.num_processes,
+        )
+        print(1 / 0)
 
-    transformer3d, optimizer, train_rec_dataloader, train_vec_dataloader, lr_scheduler = accelerator.prepare(transformer3d, optimizer, train_rec_dataloader, train_vec_dataloader, lr_scheduler)
+    combined_model, optimizer, train_rec_dataloader, train_square_dataloader, train_vec_dataloader, lr_scheduler = accelerator.prepare(combined_model, optimizer, train_rec_dataloader, train_square_dataloader, train_vec_dataloader, lr_scheduler)
 
-    vae.to(accelerator.device if not args.low_vram else "cpu", dtype=weight_dtype)
-    text_encoder.to(accelerator.device if not args.low_vram else "cpu")
-    clip_image_encoder.to(accelerator.device if not args.low_vram else "cpu", dtype=weight_dtype)
-    wav2vec.to(accelerator.device if not args.low_vram else "cpu")
+    vae.to(accelerator.device, dtype=weight_dtype)
+    clip_image_encoder.to(accelerator.device, dtype=weight_dtype)
+    text_encoder.to(accelerator.device)
 
-    # num_update_steps_per_epoch = math.ceil((len(train_rec_dataloader)+len(train_vec_dataloader)) / args.gradient_accumulation_steps)
-    num_update_steps_per_epoch = math.ceil(len(train_rec_dataloader) / args.gradient_accumulation_steps)
+    num_update_steps_per_epoch = math.ceil((len(train_rec_dataloader)+len(train_square_dataloader)+len(train_vec_dataloader)) / args.gradient_accumulation_steps)
     if overrode_max_train_steps:
         args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
     # Afterwards we recalculate our number of training epochs
@@ -1036,10 +1100,12 @@ def main():
 
     total_batch_size = args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
 
+    len_zero = len(train_rec_dataloader)
+    len_one = len(train_square_dataloader)
+    len_two = len(train_vec_dataloader)
 
     logger.info("***** Running training *****")
-    # logger.info(f"  Num examples = {len(train_rec_dataset)+len(train_vec_dataset)}")
-    logger.info(f"  Num examples = {len(train_rec_dataset)}")
+    logger.info(f"  Num examples = {len(train_rec_dataset)+len(train_square_dataset)+len(train_vec_dataset)}")
     logger.info(f"  Num Epochs = {args.num_train_epochs}")
     logger.info(f"  Instantaneous batch size per device = {args.train_batch_size}")
     logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}")
@@ -1098,17 +1164,17 @@ def main():
 
     idx_sampling = DiscreteSampling(args.train_sampling_steps, uniform_sampling=args.uniform_sampling)
 
-    len_zero = len(train_rec_dataloader)
-    len_one = len(train_vec_dataloader)
-
     for epoch in range(first_epoch, args.num_train_epochs):
         train_loss = 0.0
 
         iter1 = iter(train_rec_dataloader)
-        iter2 = iter(train_vec_dataloader)
-        iter_list = [0] * len_zero + [1] * len_one
+        iter2 = iter(train_square_dataloader)
+        iter3 = iter(train_vec_dataloader)
+        iter_list = [0] * len_zero + [1] * len_one + [2] * len_two
         random.shuffle(iter_list)
+
         for step in range(0, len(iter_list)):
+
             current_idx = iter_list[step]
             if current_idx == 0:
                 try:
@@ -1120,13 +1186,20 @@ def main():
                 try:
                     batch = next(iter2)
                 except StopIteration:
-                    iter2 = iter(train_vec_dataloader)
+                    iter2 = iter(train_square_dataloader)
                     batch = next(iter2)
+            elif current_idx == 2:
+                try:
+                    batch = next(iter3)
+                except StopIteration:
+                    iter3 = iter(train_vec_dataloader)
+                    batch = next(iter3)
             else:
                 batch = None
                 print(1 / 0)
 
-            with accelerator.accumulate(transformer3d):
+            models_to_accumulate = [combined_model]
+            with accelerator.accumulate(models_to_accumulate):
                 pixel_values = batch["pixel_values"].to(weight_dtype)
                 masked_pixel_values = batch["masked_pixel_values"].to(weight_dtype)
                 pixel_value_masks = batch["pixel_value_masks"].to(weight_dtype)
@@ -1151,6 +1224,7 @@ def main():
                     clip_image_encoder.to(accelerator.device)
                     text_encoder.to("cpu")
                     wav2vec.to("cpu")
+
 
                 with torch.no_grad():
                     # This way is quicker when batch grows up
@@ -1179,7 +1253,9 @@ def main():
                             pixel_value_masks[:, :, 1:]
                         ], dim=2
                     )
-                    pixel_value_masks = pixel_value_masks.view(pixel_value_masks.shape[0], pixel_value_masks.shape[2] // 4, 4, pixel_value_masks.shape[3], pixel_value_masks.shape[4])
+                    pixel_value_masks = pixel_value_masks.view(pixel_value_masks.shape[0],
+                                                               pixel_value_masks.shape[2] // 4, 4,
+                                                               pixel_value_masks.shape[3], pixel_value_masks.shape[4])
                     pixel_value_masks = pixel_value_masks.transpose(1, 2)
                     pixel_value_masks = resize_mask(1 - pixel_value_masks, latents)
 
@@ -1195,7 +1271,11 @@ def main():
                         clip_image = Image.fromarray(np.uint8(clip_pixel_value.float().cpu().numpy()))
                         clip_image = TF.to_tensor(clip_image).sub_(0.5).div_(0.5).to(clip_image_encoder.device, weight_dtype)
                         _clip_context = clip_image_encoder([clip_image[:, None, :, :]])
-                        clip_context.append(_clip_context)
+                        if rng is None:
+                            zero_init_clip_in = np.random.choice([True, False], p=[0.1, 0.9])
+                        else:
+                            zero_init_clip_in = rng.choice([True, False], p=[0.1, 0.9])
+                        clip_context.append(_clip_context if not zero_init_clip_in else torch.zeros_like(_clip_context))
                     clip_context = torch.cat(clip_context)
 
                 if vae_stream_1 is not None:
@@ -1221,6 +1301,8 @@ def main():
 
                     seq_lens = prompt_attention_mask.gt(0).sum(dim=1).long()
                     prompt_embeds = text_encoder(text_input_ids.to(latents.device), attention_mask=prompt_attention_mask.to(latents.device))[0]
+                    # print(f"The size of prompt_embeds: {prompt_embeds.size()}") # [1, 226, 4096]
+                    # print(f"seq_lens: {seq_lens}") # [1]
                     prompt_embeds = [u[:v] for u, v in zip(prompt_embeds, seq_lens)]
 
                 if args.low_vram:
@@ -1288,15 +1370,15 @@ def main():
                 target_shape = (vae.latent_channels, num_frames, width, height)
                 seq_len = math.ceil(
                     (target_shape[2] * target_shape[3]) /
-                    (accelerator.unwrap_model(transformer3d).config.patch_size[1] *
-                     accelerator.unwrap_model(transformer3d).config.patch_size[2]) *
+                    (accelerator.unwrap_model(combined_model.transformer3d).config.patch_size[1] *
+                     accelerator.unwrap_model(combined_model.transformer3d).config.patch_size[2]) *
                     target_shape[1]
                 )
 
                 # Predict the noise residual
                 with torch.cuda.amp.autocast(dtype=weight_dtype):
 
-                    noise_pred = transformer3d(
+                    noise_pred = combined_model.transformer3d(
                         x=noisy_latents,
                         context=prompt_embeds,
                         t=timesteps,
@@ -1346,20 +1428,8 @@ def main():
 
                 # Backpropagate
                 accelerator.backward(loss)
-
                 if accelerator.sync_gradients:
-                    if not args.use_deepspeed:
-                        trainable_params_grads = [p.grad for p in trainable_params if p.grad is not None]
-                        trainable_params_total_norm = torch.norm(torch.stack([torch.norm(g.detach(), 2) for g in trainable_params_grads]), 2)
-                        max_grad_norm = linear_decay(args.max_grad_norm * args.initial_grad_norm_ratio, args.max_grad_norm, args.abnormal_norm_clip_start, global_step)
-                        if trainable_params_total_norm / max_grad_norm > 5 and global_step > args.abnormal_norm_clip_start:
-                            actual_max_grad_norm = max_grad_norm / min((trainable_params_total_norm / max_grad_norm), 10)
-                        else:
-                            actual_max_grad_norm = max_grad_norm
-                    else:
-                        actual_max_grad_norm = args.max_grad_norm
-                    norm_sum = accelerator.clip_grad_norm_(trainable_params, actual_max_grad_norm)
-
+                    accelerator.clip_grad_norm_(trainable_params, args.max_grad_norm)
                 optimizer.step()
                 lr_scheduler.step()
                 optimizer.zero_grad()
@@ -1401,32 +1471,7 @@ def main():
                         accelerator.save_state(accelerator_save_path)
                         logger.info(f"Saved state to {accelerator_save_path}")
 
-                        transformer3d_saved_path = os.path.join(args.output_dir, f"checkpoint-{global_step}", f"transformer3d-checkpoint-{global_step}.pt")
-                        unwrap_transformer3d = accelerator.unwrap_model(transformer3d)
-                        unwrap_transformer3d_state_dict = unwrap_transformer3d.state_dict()
-                        torch.save(unwrap_transformer3d_state_dict, transformer3d_saved_path)
-                        print(f"Saved transformer to {transformer3d_saved_path}")
-
-                if accelerator.is_main_process:
-                    if global_step % args.validation_steps == 0:
-                        torch.cuda.empty_cache()
-                        log_validation(vae=vae,
-                                       text_encoder=text_encoder,
-                                       tokenizer=tokenizer,
-                                       clip_image_encoder=clip_image_encoder,
-                                       transformer3d=transformer3d,
-                                       config=config,
-                                       args=args,
-                                       accelerator=accelerator,
-                                       weight_dtype=weight_dtype,
-                                       global_step=global_step,
-                                       width=480,
-                                       height=832,
-                                       wav2vec_processor=wav2vec_processor,
-                                       wav2vec=wav2vec,
-                                       )
-                        torch.cuda.empty_cache()
-
+            torch.cuda.empty_cache()
             logs = {"step_loss": loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0]}
             progress_bar.set_postfix(**logs)
 
@@ -1440,16 +1485,10 @@ def main():
         os.makedirs(accelerator_save_path, exist_ok=True)
         accelerator.save_state(accelerator_save_path)
         logger.info(f"Saved state to {accelerator_save_path}")
-
-        transformer3d_saved_path = os.path.join(args.output_dir, f"checkpoint-{global_step}",
-                                                f"transformer3d-checkpoint-{global_step}.pt")
-        unwrap_transformer3d = accelerator.unwrap_model(transformer3d)
-        unwrap_transformer3d_state_dict = unwrap_transformer3d.state_dict()
-        torch.save(unwrap_transformer3d_state_dict, transformer3d_saved_path)
-        print(f"Saved transformer to {transformer3d_saved_path}")
-
     accelerator.end_training()
 
 
 if __name__ == "__main__":
     main()
+
+

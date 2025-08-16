@@ -51,6 +51,7 @@ from wan.models.wan_image_encoder import CLIPModel
 from wan.pipeline.wan_inference_pipeline_fantasy import WanI2VFantasyPipeline
 
 from wan.utils.discrete_sampler import DiscreteSampling
+from wan.utils.lora_utils import create_network
 from wan.utils.utils import get_image_to_video_latent, save_videos_grid
 
 
@@ -894,7 +895,14 @@ def main():
     clip_image_encoder.requires_grad_(False)
     wav2vec.requires_grad_(False)
 
-    transformer3d.train()
+    lora_network = create_network(
+        1.0,
+        args.rank,
+        args.network_alpha,
+        transformer3d,
+        neuron_dropout=None,
+    )
+    lora_network.apply_to(transformer3d, True)
 
     if args.gradient_checkpointing:
         transformer3d.enable_gradient_checkpointing()
@@ -929,17 +937,15 @@ def main():
     else:
         optimizer_cls = torch.optim.AdamW
 
+
     trainable_params_optim = []
+    trainable_params = list(filter(lambda p: p.requires_grad, lora_network.parameters()))
+    trainable_params_optim = lora_network.prepare_optimizer_params(args.learning_rate, args.learning_rate)
     for name, para in transformer3d.named_parameters():
-        if "vocal_projector" in name or "audio_projector" in name or "vocal" in name or "audio" in name or "attn" in name or "blocks" in name:
+        if "vocal" in name or "audio" in name or "vocal_projector" in name or "audio_projector" in name:
             para.requires_grad = True
             trainable_params_optim.append({"params": para, "lr": args.learning_rate})
-    # for name, para in vocal_projector.named_parameters():
-    #     para.requires_grad = True
-    #     trainable_params_optim.append({"params": para, "lr": args.learning_rate})
-
-    trainable_params = list(filter(lambda p: p.requires_grad, transformer3d.parameters()))
-    # trainable_params += list(filter(lambda p: p.requires_grad, vocal_projector.parameters()))
+            trainable_params.append(para)
 
     if args.use_came:
         optimizer = optimizer_cls(
@@ -1014,7 +1020,7 @@ def main():
         num_training_steps=args.max_train_steps * accelerator.num_processes,
     )
 
-    transformer3d, optimizer, train_rec_dataloader, train_vec_dataloader, lr_scheduler = accelerator.prepare(transformer3d, optimizer, train_rec_dataloader, train_vec_dataloader, lr_scheduler)
+    transformer3d, lora_network, optimizer, train_rec_dataloader, train_vec_dataloader, lr_scheduler = accelerator.prepare(transformer3d, lora_network, optimizer, train_rec_dataloader, train_vec_dataloader, lr_scheduler)
 
     vae.to(accelerator.device if not args.low_vram else "cpu", dtype=weight_dtype)
     text_encoder.to(accelerator.device if not args.low_vram else "cpu")
@@ -1406,6 +1412,12 @@ def main():
                         unwrap_transformer3d_state_dict = unwrap_transformer3d.state_dict()
                         torch.save(unwrap_transformer3d_state_dict, transformer3d_saved_path)
                         print(f"Saved transformer to {transformer3d_saved_path}")
+
+                        lora_network_saved_path = os.path.join(args.output_dir, f"checkpoint-{global_step}", f"lora-checkpoint-{global_step}.pt")
+                        unwrap_lora_network = accelerator.unwrap_model(lora_network)
+                        unwrap_lora_network_state_dict = unwrap_lora_network.state_dict()
+                        torch.save(unwrap_lora_network_state_dict, lora_network_saved_path)
+                        print(f"Saved transformer to {lora_network_saved_path}")
 
                 if accelerator.is_main_process:
                     if global_step % args.validation_steps == 0:
