@@ -152,7 +152,7 @@ python audio_extractor.py --video_path="path/test/video.mp4" --saved_audio_path=
 As noisy background music may negatively impact the performance of StableAvatar to some extents, you can further separate the vocal from the audio file for better lip synchronization.
 Given the path to an audio file (.wav), you can run the following command to extract the corresponding vocal signals:
 ```
-pip install audio-separator
+pip install audio-separator[gpu]
 python vocal_seperator.py --audio_separator_model_file="path/StableAvatar/checkpoints/Kim_Vocal_2.onnx" --audio_file_path="path/test/audio.wav" --saved_vocal_path="path/test/vocal.wav"
 ```
 
