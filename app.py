@@ -21,6 +21,12 @@ import datetime
 import random
 import math
 import subprocess
+from moviepy.editor import VideoFileClip
+import shutil
+try:
+    from audio_separator.separator import Separator
+except:
+    print("无法使用人声分离功能，请安装audio-separator[gpu]")
 
 
 parser = argparse.ArgumentParser() 
@@ -206,6 +212,32 @@ def adjust_width_height(image):
     return int(width), int(height), "✅ 根据图片调整宽高"
 
 
+def audio_extractor(video_path):
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    video = VideoFileClip(video_path)
+    audio = video.audio
+    audio.write_audiofile(f"outputs/{timestamp}.wav", codec='pcm_s16le')
+    return f"outputs/{timestamp}.wav", f"已生成outputs/{timestamp}.wav"
+
+
+def vocal_separation(audio_path):
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    audio_separator_model_file = "checkpoints/Kim_Vocal_2.onnx"
+    audio_separator = Separator(
+        output_dir=f"outputs/{timestamp}",
+        output_single_stem="vocals",
+        model_file_dir=os.path.dirname(audio_separator_model_file),
+    )
+    audio_separator.load_model(os.path.basename(audio_separator_model_file))
+    assert audio_separator.model_instance is not None, "Fail to load audio separate model."
+    outputs = audio_separator.separate(audio_path)
+    vocal_audio_file = os.path.join(audio_separator.output_dir, outputs[0])
+    destination_file = f"outputs/{timestamp}.wav"
+    shutil.copy(vocal_audio_file, destination_file)
+    os.remove(vocal_audio_file)
+    return f"outputs/{timestamp}.wav", f"已生成outputs/{timestamp}.wav"
+
+
 with gr.Blocks(theme=gr.themes.Base()) as demo:
     gr.Markdown("""
             <div>
@@ -254,6 +286,22 @@ with gr.Blocks(theme=gr.themes.Base()) as demo:
                 info = gr.Textbox(label="提示信息", interactive=False)
                 video_output = gr.Video(label="生成结果", interactive=False)
                 seed_output = gr.Textbox(label="种子")
+    with gr.TabItem("音频提取"):
+        with gr.Row():
+            with gr.Column():
+                video_path = gr.Video(label="上传视频", height=500)
+                extractor_button = gr.Button("🎬 开始提取", variant='primary')
+            with gr.Column():
+                info2 = gr.Textbox(label="提示信息", interactive=False)
+                audio_output = gr.Audio(label="生成结果", interactive=False)
+    with gr.TabItem("人声分离"):
+        with gr.Row():
+            with gr.Column():
+                audio_path3 = gr.Audio(label="上传音频", type="filepath")
+                separation_button = gr.Button("🎬 开始分离", variant='primary')
+            with gr.Column():
+                info3 = gr.Textbox(label="提示信息", interactive=False)
+                audio_output3 = gr.Audio(label="生成结果", interactive=False)
 
     gr.on(
         triggers=[generate_button.click, prompt.submit, negative_prompt.submit],
@@ -288,6 +336,16 @@ with gr.Blocks(theme=gr.themes.Base()) as demo:
         fn=adjust_width_height, 
         inputs=[image_path], 
         outputs=[width, height, info]
+    )
+    extractor_button.click(
+        fn=audio_extractor, 
+        inputs=[video_path], 
+        outputs=[audio_output, info2]
+    )
+    separation_button.click(
+        fn=vocal_separation, 
+        inputs=[audio_path3], 
+        outputs=[audio_output3, info3]
     )
 
 
