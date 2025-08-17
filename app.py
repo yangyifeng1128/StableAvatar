@@ -153,7 +153,6 @@ def generate(
             num_inference_steps,
             teacache_threshold,
             num_skip_start_steps=num_skip_start_steps,
-            #offload=args.teacache_offload
         )
 
     with torch.no_grad():
@@ -194,11 +193,11 @@ def generate(
             output_video_with_audio
         ], check=True)
         
-    return output_video_with_audio, seed, f"已生成outputs/{timestamp}.mp4"
+    return output_video_with_audio, seed, f"Generated outputs/{timestamp}.mp4 / 已生成outputs/{timestamp}.mp4"
 
 
 def exchange_width_height(width, height):
-    return height, width, "✅ 宽高交换完毕"
+    return height, width, "✅ Width and Height Swapped / 宽高交换完毕"
 
 
 def adjust_width_height(image):
@@ -209,7 +208,7 @@ def adjust_width_height(image):
     ratio = math.sqrt(original_area / default_area)
     width = width / ratio // 16 * 16
     height = height / ratio // 16 * 16
-    return int(width), int(height), "✅ 根据图片调整宽高"
+    return int(width), int(height), "✅ Adjusted Size Based on Image / 根据图片调整宽高"
 
 
 def audio_extractor(video_path):
@@ -217,7 +216,7 @@ def audio_extractor(video_path):
     video = VideoFileClip(video_path)
     audio = video.audio
     audio.write_audiofile(f"outputs/{timestamp}.wav", codec='pcm_s16le')
-    return f"outputs/{timestamp}.wav", f"已生成outputs/{timestamp}.wav"
+    return f"outputs/{timestamp}.wav", f"Generated outputs/{timestamp}.wav / 已生成outputs/{timestamp}.wav"
 
 
 def vocal_separation(audio_path):
@@ -235,7 +234,78 @@ def vocal_separation(audio_path):
     destination_file = f"outputs/{timestamp}.wav"
     shutil.copy(vocal_audio_file, destination_file)
     os.remove(vocal_audio_file)
-    return f"outputs/{timestamp}.wav", f"已生成outputs/{timestamp}.wav"
+    return f"outputs/{timestamp}.wav", f"Generated outputs/{timestamp}.wav / 已生成outputs/{timestamp}.wav"
+
+
+def update_language(language):
+    if language == "English":
+        return {
+            GPU_memory_mode: gr.Dropdown(label="GPU Memory Mode", info="Normal uses 25G VRAM, model_cpu_offload uses 13G VRAM"),
+            teacache_threshold: gr.Slider(label="TeaCache Threshold", info="Recommended 0.1, 0 disables TeaCache acceleration"),
+            num_skip_start_steps: gr.Slider(label="Skip Start Steps", info="Recommended 5"),
+            image_path: gr.Image(label="Upload Image"),
+            audio_path: gr.Audio(label="Upload Audio"),
+            prompt: gr.Textbox(label="Prompt"),
+            negative_prompt: gr.Textbox(label="Negative Prompt"),
+            generate_button: gr.Button("🎬 Start Generation"),
+            width: gr.Slider(label="Width"),
+            height: gr.Slider(label="Height"),
+            exchange_button: gr.Button("🔄 Swap Width/Height"),
+            adjust_button: gr.Button("Adjust Size Based on Image"),
+            guidance_scale: gr.Slider(label="Guidance Scale"),
+            num_inference_steps: gr.Slider(label="Sampling Steps (Recommended 50)"),
+            text_guide_scale: gr.Slider(label="Text Guidance Scale"),
+            audio_guide_scale: gr.Slider(label="Audio Guidance Scale"),
+            motion_frame: gr.Slider(label="Motion Frame"),
+            fps: gr.Slider(label="FPS"),
+            overlap_window_length: gr.Slider(label="Overlap Window Length"),
+            seed_param: gr.Number(label="Seed (positive integer, -1 for random)"),
+            info: gr.Textbox(label="Status"),
+            video_output: gr.Video(label="Generated Result"),
+            seed_output: gr.Textbox(label="Seed"),
+            video_path: gr.Video(label="Upload Video"),
+            extractor_button: gr.Button("🎬 Start Extraction"),
+            info2: gr.Textbox(label="Status"),
+            audio_output: gr.Audio(label="Generated Result"),
+            audio_path3: gr.Audio(label="Upload Audio"),
+            separation_button: gr.Button("🎬 Start Separation"),
+            info3: gr.Textbox(label="Status"),
+            audio_output3: gr.Audio(label="Generated Result")
+        }
+    else:
+        return {
+            GPU_memory_mode: gr.Dropdown(label="显存模式", info="Normal占用25G显存，model_cpu_offload占用13G显存"),
+            teacache_threshold: gr.Slider(label="teacache threshold", info="推荐参数0.1，0为禁用teacache加速"),
+            num_skip_start_steps: gr.Slider(label="跳过开始步数", info="推荐参数5"),
+            image_path: gr.Image(label="上传图片"),
+            audio_path: gr.Audio(label="上传音频"),
+            prompt: gr.Textbox(label="提示词"),
+            negative_prompt: gr.Textbox(label="负面提示词"),
+            generate_button: gr.Button("🎬 开始生成"),
+            width: gr.Slider(label="宽度"),
+            height: gr.Slider(label="高度"),
+            exchange_button: gr.Button("🔄 交换宽高"),
+            adjust_button: gr.Button("根据图片调整宽高"),
+            guidance_scale: gr.Slider(label="guidance scale"),
+            num_inference_steps: gr.Slider(label="采样步数（推荐50步）"),
+            text_guide_scale: gr.Slider(label="text guidance scale"),
+            audio_guide_scale: gr.Slider(label="audio guidance scale"),
+            motion_frame: gr.Slider(label="motion frame"),
+            fps: gr.Slider(label="帧率"),
+            overlap_window_length: gr.Slider(label="overlap window length"),
+            seed_param: gr.Number(label="种子，请输入正整数，-1为随机"),
+            info: gr.Textbox(label="提示信息"),
+            video_output: gr.Video(label="生成结果"),
+            seed_output: gr.Textbox(label="种子"),
+            video_path: gr.Video(label="上传视频"),
+            extractor_button: gr.Button("🎬 开始提取"),
+            info2: gr.Textbox(label="提示信息"),
+            audio_output: gr.Audio(label="生成结果"),
+            audio_path3: gr.Audio(label="上传音频"),
+            separation_button: gr.Button("🎬 开始分离"),
+            info3: gr.Textbox(label="提示信息"),
+            audio_output3: gr.Audio(label="生成结果")
+        }
 
 
 with gr.Blocks(theme=gr.themes.Base()) as demo:
@@ -244,7 +314,14 @@ with gr.Blocks(theme=gr.themes.Base()) as demo:
                 <h2 style="font-size: 30px;text-align: center;">StableAvatar</h2>
             </div>
             """)
-    with gr.Accordion("模型设置", open=False):
+    
+    language_radio = gr.Radio(
+        choices=["English", "中文"], 
+        value="中文", 
+        label="Language / 语言"
+    )
+    
+    with gr.Accordion("Model Settings / 模型设置", open=False):
         with gr.Row():
             GPU_memory_mode = gr.Dropdown(
                 label = "显存模式", 
@@ -263,7 +340,7 @@ with gr.Blocks(theme=gr.themes.Base()) as demo:
                 prompt = gr.Textbox(label="提示词", value="")
                 negative_prompt = gr.Textbox(label="负面提示词", value="色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走")
                 generate_button = gr.Button("🎬 开始生成", variant='primary')
-                with gr.Accordion("参数设置", open=True):
+                with gr.Accordion("Parameter Settings / 参数设置", open=True):
                     with gr.Row():
                         width = gr.Slider(label="宽度", minimum=256, maximum=2048, step=16, value=512)
                         height = gr.Slider(label="高度", minimum=256, maximum=2048, step=16, value=512)
@@ -286,7 +363,7 @@ with gr.Blocks(theme=gr.themes.Base()) as demo:
                 info = gr.Textbox(label="提示信息", interactive=False)
                 video_output = gr.Video(label="生成结果", interactive=False)
                 seed_output = gr.Textbox(label="种子")
-    with gr.TabItem("音频提取"):
+    with gr.TabItem("Audio Extraction / 音频提取"):
         with gr.Row():
             with gr.Column():
                 video_path = gr.Video(label="上传视频", height=500)
@@ -294,7 +371,7 @@ with gr.Blocks(theme=gr.themes.Base()) as demo:
             with gr.Column():
                 info2 = gr.Textbox(label="提示信息", interactive=False)
                 audio_output = gr.Audio(label="生成结果", interactive=False)
-    with gr.TabItem("人声分离"):
+    with gr.TabItem("Vocal Separation / 人声分离"):
         with gr.Row():
             with gr.Column():
                 audio_path3 = gr.Audio(label="上传音频", type="filepath")
@@ -302,6 +379,14 @@ with gr.Blocks(theme=gr.themes.Base()) as demo:
             with gr.Column():
                 info3 = gr.Textbox(label="提示信息", interactive=False)
                 audio_output3 = gr.Audio(label="生成结果", interactive=False)
+
+    all_components = [GPU_memory_mode, teacache_threshold, num_skip_start_steps, image_path, audio_path, prompt, negative_prompt, generate_button, width, height, exchange_button, adjust_button, guidance_scale, num_inference_steps, text_guide_scale, audio_guide_scale, motion_frame, fps, overlap_window_length, seed_param, info, video_output, seed_output, video_path, extractor_button, info2, audio_output, audio_path3, separation_button, info3, audio_output3]
+
+    language_radio.change(
+        fn=update_language,
+        inputs=[language_radio],
+        outputs=all_components
+    )
 
     gr.on(
         triggers=[generate_button.click, prompt.submit, negative_prompt.submit],
