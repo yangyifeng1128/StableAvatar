@@ -901,6 +901,7 @@ def main():
         args.network_alpha,
         transformer3d,
         neuron_dropout=None,
+        TRANSFORMER_TARGET_REPLACE_MODULE="WanTransformer3DFantasyModel",
     )
     lora_network.apply_to(transformer3d, True)
 
