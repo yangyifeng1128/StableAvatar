@@ -149,7 +149,7 @@ def precalculate_safetensors_hashes(tensors, metadata):
 
 
 class LoRANetwork(torch.nn.Module):
-    TRANSFORMER_TARGET_REPLACE_MODULE = ["WanTransformer3DModel"]
+    # TRANSFORMER_TARGET_REPLACE_MODULE = ["WanTransformer3DModel"]
     LORA_PREFIX_TRANSFORMER = "lora_transformer"
 
     def __init__(
@@ -162,6 +162,7 @@ class LoRANetwork(torch.nn.Module):
             module_class: Type[object] = LoRAModule,
             skip_name: str = None,
             varbose: Optional[bool] = False,
+            TRANSFORMER_TARGET_REPLACE_MODULE="WanTransformer3DFantasyModel",
     ):
         super().__init__()
         self.multiplier = multiplier
@@ -169,6 +170,7 @@ class LoRANetwork(torch.nn.Module):
         self.lora_dim = lora_dim
         self.alpha = alpha
         self.dropout = dropout
+        self.TRANSFORMER_TARGET_REPLACE_MODULE = [TRANSFORMER_TARGET_REPLACE_MODULE]
         print(f"create LoRA network. base dim (rank): {lora_dim}, alpha: {alpha}")
         print(f"neuron dropout: p={self.dropout}")
 
@@ -225,7 +227,8 @@ class LoRANetwork(torch.nn.Module):
                             loras.append(lora)
             return loras, skipped
 
-        self.transformer_loras, skipped_un = create_modules(True, transformer, LoRANetwork.TRANSFORMER_TARGET_REPLACE_MODULE)
+        # self.transformer_loras, skipped_un = create_modules(True, transformer, LoRANetwork.TRANSFORMER_TARGET_REPLACE_MODULE)
+        self.transformer_loras, skipped_un = create_modules(True, transformer, self.TRANSFORMER_TARGET_REPLACE_MODULE)
         print(f"create LoRA for Transformer: {len(self.transformer_loras)} modules.")
         names = set()
         for lora in self.transformer_loras:
@@ -309,6 +312,7 @@ def create_network(
     transformer,
     neuron_dropout: Optional[float] = None,
     skip_name: str = None,
+    TRANSFORMER_TARGET_REPLACE_MODULE=None,
     **kwargs,
 ):
     if network_dim is None:
@@ -324,6 +328,7 @@ def create_network(
         dropout=neuron_dropout,
         skip_name=skip_name,
         varbose=True,
+        TRANSFORMER_TARGET_REPLACE_MODULE=TRANSFORMER_TARGET_REPLACE_MODULE,
     )
     return network
 
