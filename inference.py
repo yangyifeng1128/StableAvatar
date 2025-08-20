@@ -563,7 +563,8 @@ def main():
             cond_file_path=args.validation_reference_path,
             seed=args.seed,
             overlap_window_length=args.overlap_window_length,
-            overlapping_weight_scheme=args.overlapping_weight_scheme
+            overlapping_weight_scheme=args.overlapping_weight_scheme,
+            clip_length=clip_sample_n_frames  # Pass clip_length parameter
         ).videos
         del pipeline
         saved_frames_dir = os.path.join(args.output_dir, "animated_images")
