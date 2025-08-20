@@ -576,6 +576,7 @@ class WanI2VTalkingInferenceLongPipeline(DiffusionPipeline):
             seed=None,
             overlap_window_length=None,
             overlapping_weight_scheme="uniform",
+            clip_length=81,  # Default from original code
     ) -> Union[WanI2VPipelineTalkingInferenceLongOutput, Tuple]:
         """
         Function invoked when calling the pipeline for generation.
@@ -636,11 +637,12 @@ class WanI2VTalkingInferenceLongPipeline(DiffusionPipeline):
             # prompt_embeds = negative_prompt_embeds + prompt_embeds + prompt_embeds
             prompt_embeds = negative_prompt_embeds + negative_prompt_embeds + prompt_embeds
 
-        clip_length = 81
+        # clip_length is now a parameter with default value 81
+        # Calculate frames_per_batch based on clip_length and temporal compression ratio
+        frames_per_batch = (clip_length - 1) // self.vae.config.temporal_compression_ratio + 1
         audio_token_per_frame = int(sr / fps)
         max_audio_index = vocal_input_values.shape[0]
         total_frames = int(max_audio_index / audio_token_per_frame)
-        frames_per_batch = 21
         if isinstance(self.scheduler, FlowMatchEulerDiscreteScheduler):
             timesteps, num_inference_steps = retrieve_timesteps(self.scheduler, num_inference_steps, device, timesteps, mu=1)
         else:
@@ -718,7 +720,9 @@ class WanI2VTalkingInferenceLongPipeline(DiffusionPipeline):
                     if index_end == infer_length:
                         idx_list_audio = [ii % max_audio_index for ii in range(index_start * 4 * audio_token_per_frame, max_audio_index)]
                     else:
-                        idx_list_audio = [ii % max_audio_index for ii in range(index_start * 4 * audio_token_per_frame, index_start * 4 * audio_token_per_frame + clip_length * audio_token_per_frame)]
+                        # Use actual frame count for this batch instead of hardcoded clip_length
+                        actual_frames = len(idx_list) * 4  # Each latent frame corresponds to 4 original frames
+                        idx_list_audio = [ii % max_audio_index for ii in range(index_start * 4 * audio_token_per_frame, index_start * 4 * audio_token_per_frame + actual_frames * audio_token_per_frame)]
 
                     # idx_list_audio = [ii % max_audio_index for ii in range(index_start * 4 * audio_token_per_frame, index_end * 4 * audio_token_per_frame)]
                     latents = latents_all[:, :, idx_list].clone()
@@ -744,6 +748,7 @@ class WanI2VTalkingInferenceLongPipeline(DiffusionPipeline):
                             clip_fea=clip_context,
                             vocal_embeddings=sub_vocal_embeddings,
                             is_clip_level_modeling=False,
+                            video_sample_n_frames=clip_length,  # Pass the actual clip_length
                         )
                     if do_classifier_free_guidance:
                         noise_pred_uncond, noise_pred_drop_audio, noise_pred_cond = noise_pred.chunk(3)
