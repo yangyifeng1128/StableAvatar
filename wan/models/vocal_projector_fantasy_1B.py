@@ -242,16 +242,20 @@ class VocalCrossAttention(nn.Module):
         self.norm_q = WanRMSNorm(vocal_dim, eps=eps) if qk_norm else nn.Identity()
         self.norm_k = WanRMSNorm(vocal_dim, eps=eps) if qk_norm else nn.Identity()
 
-    def forward(self, x, context, q_lens, dtype):
+    def forward(self, x, context, q_lens, dtype, latents_num_frames=None):
         r"""
         Args:
             x(Tensor): Shape [B, L1, C]
             context(Tensor): Shape [B, L2, C]
             context_lens(Tensor): Shape [B]
+            latents_num_frames: Number of latent frames (optional)
         """
         b, n, d = x.size(0), self.num_heads, self.head_dim
-
-        latents_num_frames = 21
+        
+        # Use provided latents_num_frames or default to 21
+        if latents_num_frames is None:
+            latents_num_frames = 21
+            
         q = self.norm_q(self.q(x.to(dtype))).view(b * latents_num_frames, -1, n, d)
         k = self.norm_k(self.k(context.to(dtype))).view(b * latents_num_frames, -1, n, d)
         v = self.v(context.to(dtype)).view(b * latents_num_frames, -1, n, d)
@@ -321,6 +325,7 @@ class VocalAttentionBlock(nn.Module):
             context,
             q_lens,
             dtype=torch.float32,
+            latents_num_frames=None,
     ):
         r"""
         Args:
@@ -344,7 +349,7 @@ class VocalAttentionBlock(nn.Module):
         # cross-attention & ffn function
         def cross_attn_ffn(x, context, q_lens, e):
             # cross-attention
-            x = x + self.cross_attn(self.norm3(x), context, q_lens, dtype)
+            x = x + self.cross_attn(self.norm3(x), context, q_lens, dtype, latents_num_frames)
             # ffn function
             temp_x = self.norm2(x) * (1 + e[4]) + e[3]
             temp_x = temp_x.to(dtype)
@@ -436,6 +441,7 @@ class FantasyTalkingVocalCondition1BModel(nn.Module):
                 e=e0,
                 context=latents,
                 q_lens=vocal_context_lens,
+                latents_num_frames=latents_num_frames,
             )
         context_tokens = self.final_head(vocal_proj_split, e)
         context_tokens = rearrange(context_tokens, "b (f n) c -> b f n c", f=latents_num_frames)
