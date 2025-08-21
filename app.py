@@ -62,7 +62,7 @@ pretrained_wav2vec_path = f"{model_path}/wav2vec2-base-960h"
 transformer_path = f"{model_path}/StableAvatar-1.3B/transformer3d-square.pt"
 config = OmegaConf.load("deepspeed_config/wan2.1/wan_civitai.yaml")
 sampler_name = "Flow"
-clip_sample_n_frames = 81
+# clip_sample_n_frames moved to UI parameter
 tokenizer = AutoTokenizer.from_pretrained(os.path.join(pretrained_model_name_or_path, config['text_encoder_kwargs'].get('tokenizer_subpath', 'tokenizer')), )
 text_encoder = WanT5EncoderModel.from_pretrained(
     os.path.join(pretrained_model_name_or_path, config['text_encoder_kwargs'].get('text_encoder_subpath', 'text_encoder')),
@@ -111,6 +111,7 @@ def generate(
     GPU_memory_mode,
     teacache_threshold,
     num_skip_start_steps,
+    clip_sample_n_frames,
     image_path,
     audio_path,
     prompt,
@@ -132,8 +133,46 @@ def generate(
         seed = random.randint(0, np.iinfo(np.int32).max)
     else:
         seed = seed_param
+    
+    print("\n" + "="*80)
+    print(f"[{timestamp}] Generation Configuration")
+    print("="*80)
+    print(f"⚙️ System Settings:")
+    print(f"  - Device: {device}")
+    print(f"  - Dtype: {dtype}")
+    print(f"  - GPU Memory Mode: {GPU_memory_mode}")
+    print(f"\n⚡ Optimization Settings:")
+    print(f"  - TeaCache Enabled: {'Yes' if teacache_threshold > 0 else 'No'}")
+    if teacache_threshold > 0:
+        print(f"  - TeaCache Threshold: {teacache_threshold}")
+        print(f"  - Skip Start Steps: {num_skip_start_steps}")
+    print(f"\n🎬 Generation Parameters:")
+    print(f"  - Resolution: {width}x{height}")
+    print(f"  - Clip Sample Frames: {clip_sample_n_frames} (→ {(clip_sample_n_frames-1)//4+1} latent frames)")
+    print(f"  - Inference Steps: {num_inference_steps}")
+    print(f"  - Overlap Window Length: {overlap_window_length}")
+    print(f"  - Guidance Scales: text={text_guide_scale}, audio={audio_guide_scale}, overall={guidance_scale}")
+    print(f"  - Motion/FPS: motion_frame={motion_frame}, fps={fps}")
+    print("="*80)
 
-    if GPU_memory_mode == "sequential_cpu_offload":
+    # Reset pipeline hooks before applying new mode
+    # if hasattr(pipeline, '_all_hooks'):
+    #     pipeline._all_hooks.clear()
+    # if hasattr(pipeline, '_cpu_offload_hook'):
+    #     pipeline._cpu_offload_hook = None
+    
+    # Clear any existing device placements
+    if GPU_memory_mode == "Normal":
+        # For Normal mode, ensure all components are on GPU with correct dtype
+        pipeline.to(device=device)
+        
+        # pipeline.vae = pipeline.vae.to(device=device, dtype=dtype)
+        # pipeline.text_encoder = pipeline.text_encoder.to(device=device, dtype=dtype)
+        # pipeline.transformer = pipeline.transformer.to(device=device, dtype=dtype)
+        # pipeline.clip_image_encoder = pipeline.clip_image_encoder.to(device=device, dtype=dtype)
+        # if hasattr(pipeline, 'wav2vec'):
+        #     pipeline.wav2vec = pipeline.wav2vec.to(device=device)
+    elif GPU_memory_mode == "sequential_cpu_offload":
         replace_parameters_by_name(transformer3d, ["modulation", ], device=device)
         transformer3d.freqs = transformer3d.freqs.to(device=device)
         pipeline.enable_sequential_cpu_offload(device=device)
@@ -143,10 +182,9 @@ def generate(
         pipeline.enable_model_cpu_offload(device=device)
     elif GPU_memory_mode == "model_cpu_offload":
         pipeline.enable_model_cpu_offload(device=device)
-    else:
-        pipeline.to(device=device)
         
     if teacache_threshold > 0:
+        print(f"\n🚀 Enabling TeaCache acceleration...")
         coefficients = get_teacache_coefficients(pretrained_model_name_or_path)
         pipeline.transformer.enable_teacache(
             coefficients,
@@ -155,6 +193,7 @@ def generate(
             num_skip_start_steps=num_skip_start_steps,
         )
 
+    print(f"\n📊 Starting inference pipeline...")
     with torch.no_grad():
         video_length = int((clip_sample_n_frames - 1) // vae.config.temporal_compression_ratio * vae.config.temporal_compression_ratio) + 1 if clip_sample_n_frames != 1 else 1
         input_video, input_video_mask, clip_image = get_image_to_video_latent(image_path, None, video_length=video_length, sample_size=[height, width])
@@ -182,6 +221,7 @@ def generate(
             overlap_window_length=overlap_window_length,
             seed=seed,
             overlapping_weight_scheme="uniform",
+            clip_length=clip_sample_n_frames,  # Pass clip_length parameter
         ).videos
         os.makedirs("outputs", exist_ok=True)
         video_path = os.path.join("outputs", f"{timestamp}.mp4")
@@ -243,6 +283,7 @@ def update_language(language):
             GPU_memory_mode: gr.Dropdown(label="GPU Memory Mode", info="Normal uses 25G VRAM, model_cpu_offload uses 13G VRAM"),
             teacache_threshold: gr.Slider(label="TeaCache Threshold", info="Recommended 0.1, 0 disables TeaCache acceleration"),
             num_skip_start_steps: gr.Slider(label="Skip Start Steps", info="Recommended 5"),
+            clip_sample_n_frames: gr.Slider(label="Clip Sample Frames", info="Video frames, 81=2s@25fps, 161=4s@25fps, must be 4n+1"),
             image_path: gr.Image(label="Upload Image"),
             audio_path: gr.Audio(label="Upload Audio"),
             prompt: gr.Textbox(label="Prompt"),
@@ -277,6 +318,7 @@ def update_language(language):
             GPU_memory_mode: gr.Dropdown(label="显存模式", info="Normal占用25G显存，model_cpu_offload占用13G显存"),
             teacache_threshold: gr.Slider(label="teacache threshold", info="推荐参数0.1，0为禁用teacache加速"),
             num_skip_start_steps: gr.Slider(label="跳过开始步数", info="推荐参数5"),
+            clip_sample_n_frames: gr.Slider(label="Clip采样帧数", info="视频帧数，81=2秒@25fps，161=4秒@25fps，必须为4n+1"),
             image_path: gr.Image(label="上传图片"),
             audio_path: gr.Audio(label="上传音频"),
             prompt: gr.Textbox(label="提示词"),
@@ -327,10 +369,19 @@ with gr.Blocks(theme=gr.themes.Base()) as demo:
                 label = "显存模式", 
                 info = "Normal占用25G显存，model_cpu_offload占用13G显存", 
                 choices = ["Normal", "model_cpu_offload", "model_cpu_offload_and_qfloat8", "sequential_cpu_offload"], 
-                value = "model_cpu_offload"
+                value = "Normal"
             )
             teacache_threshold = gr.Slider(label="teacache threshold", info = "推荐参数0.1，0为禁用teacache加速", minimum=0, maximum=1, step=0.01, value=0)
             num_skip_start_steps = gr.Slider(label="跳过开始步数", info = "推荐参数5", minimum=0, maximum=100, step=1, value=5)
+        with gr.Row():
+            clip_sample_n_frames = gr.Slider(
+                label="Clip Sample Frames", 
+                info="视频帧数，81=2秒@25fps，161=4秒@25fps，必须为4n+1", 
+                minimum=41, 
+                maximum=321, 
+                step=4, 
+                value=81
+            )
     with gr.TabItem("StableAvatar"):
         with gr.Row():
             with gr.Column():
@@ -349,7 +400,7 @@ with gr.Blocks(theme=gr.themes.Base()) as demo:
                         adjust_button = gr.Button("根据图片调整宽高")
                     with gr.Row():
                         guidance_scale = gr.Slider(label="guidance scale", minimum=1.0, maximum=10.0, step=0.1, value=6.0)
-                        num_inference_steps = gr.Slider(label="采样步数（推荐50步）", minimum=1, maximum=100, step=1, value=50)
+                        num_inference_steps = gr.Slider(label="采样步数（推荐50步）", minimum=1, maximum=100, step=1, value=10)
                     with gr.Row():
                         text_guide_scale = gr.Slider(label="text guidance scale", minimum=1.0, maximum=10.0, step=0.1, value=3.0)
                         audio_guide_scale = gr.Slider(label="audio guidance scale", minimum=1.0, maximum=10.0, step=0.1, value=5.0)
@@ -380,7 +431,7 @@ with gr.Blocks(theme=gr.themes.Base()) as demo:
                 info3 = gr.Textbox(label="提示信息", interactive=False)
                 audio_output3 = gr.Audio(label="生成结果", interactive=False)
 
-    all_components = [GPU_memory_mode, teacache_threshold, num_skip_start_steps, image_path, audio_path, prompt, negative_prompt, generate_button, width, height, exchange_button, adjust_button, guidance_scale, num_inference_steps, text_guide_scale, audio_guide_scale, motion_frame, fps, overlap_window_length, seed_param, info, video_output, seed_output, video_path, extractor_button, info2, audio_output, audio_path3, separation_button, info3, audio_output3]
+    all_components = [GPU_memory_mode, teacache_threshold, num_skip_start_steps, clip_sample_n_frames, image_path, audio_path, prompt, negative_prompt, generate_button, width, height, exchange_button, adjust_button, guidance_scale, num_inference_steps, text_guide_scale, audio_guide_scale, motion_frame, fps, overlap_window_length, seed_param, info, video_output, seed_output, video_path, extractor_button, info2, audio_output, audio_path3, separation_button, info3, audio_output3]
 
     language_radio.change(
         fn=update_language,
@@ -395,6 +446,7 @@ with gr.Blocks(theme=gr.themes.Base()) as demo:
             GPU_memory_mode,
             teacache_threshold,
             num_skip_start_steps,
+            clip_sample_n_frames,
             image_path,
             audio_path,
             prompt,

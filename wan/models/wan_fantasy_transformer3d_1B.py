@@ -531,7 +531,7 @@ class WanI2VTalkingCrossAttention(WanSelfAttention):
             nn.init.zeros_(self.v_vocal.bias)
 
 
-    def forward(self, x, context, context_lens, dtype, vocal_context=None, vocal_context_lens=None):
+    def forward(self, x, context, context_lens, dtype, vocal_context=None, vocal_context_lens=None, latents_num_frames=None):
         r"""
         Args:
             x(Tensor): Shape [B, L1, C]
@@ -569,7 +569,9 @@ class WanI2VTalkingCrossAttention(WanSelfAttention):
         )
         x = x.to(dtype)
 
-        latents_num_frames = 21
+        # Use provided latents_num_frames or default to 21
+        if latents_num_frames is None:
+            latents_num_frames = 21
         if len(vocal_context.shape) == 4:
             vocal_q = q.view(b * latents_num_frames, -1, n, d)
             vocal_ip_key = self.k_vocal(vocal_context).view(b * latents_num_frames, -1, n, d)
@@ -657,6 +659,7 @@ class WanAttentionBlock(nn.Module):
             dtype=torch.float32,
             vocal_context=None,
             vocal_context_lens=None,
+            latents_num_frames=None,
     ):
         r"""
         Args:
@@ -678,7 +681,7 @@ class WanAttentionBlock(nn.Module):
         # cross-attention & ffn function
         def cross_attn_ffn(x, context, context_lens, e, vocal_context, vocal_context_lens):
             # cross-attention
-            x = x + self.cross_attn(self.norm3(x), context, context_lens, dtype, vocal_context, vocal_context_lens)
+            x = x + self.cross_attn(self.norm3(x), context, context_lens, dtype, vocal_context, vocal_context_lens, latents_num_frames)
 
             # ffn function
             temp_x = self.norm2(x) * (1 + e[4]) + e[3]
@@ -933,6 +936,7 @@ class WanTransformer3DFantasyModel(ModelMixin, ConfigMixin, FromOriginalModelMix
             cond_flag=True,
             vocal_embeddings=None,
             is_clip_level_modeling=False,
+            video_sample_n_frames=81,  # Add parameter with default value
     ):
         r"""
         Forward pass through the diffusion model
@@ -999,13 +1003,15 @@ class WanTransformer3DFantasyModel(ModelMixin, ConfigMixin, FromOriginalModelMix
 
         if vocal_embeddings.size()[0] > 1:
             vocal_embeddings = vocal_embeddings[-1:]
-            vocal_context, vocal_context_lens = self.vocal_projector(vocal_embeddings=vocal_embeddings, video_sample_n_frames=81, latents=x[-1:], e0=e0[-1:], e=e[-1:])
+            vocal_context, vocal_context_lens = self.vocal_projector(vocal_embeddings=vocal_embeddings, video_sample_n_frames=video_sample_n_frames, latents=x[-1:], e0=e0[-1:], e=e[-1:])
             vocal_context = torch.cat([torch.zeros_like(vocal_context), vocal_context, vocal_context])
         else:
-            vocal_context, vocal_context_lens = self.vocal_projector(vocal_embeddings=vocal_embeddings, video_sample_n_frames=81, latents=x, e0=e0, e=e)
+            vocal_context, vocal_context_lens = self.vocal_projector(vocal_embeddings=vocal_embeddings, video_sample_n_frames=video_sample_n_frames, latents=x, e0=e0, e=e)
 
         if is_clip_level_modeling:
-            vocal_context = rearrange(vocal_context, "b f n c -> b (f n) c", f=21)
+            # Calculate frames_per_batch based on video_sample_n_frames
+            frames_per_batch = (video_sample_n_frames - 1) // 4 + 1
+            vocal_context = rearrange(vocal_context, "b f n c -> b (f n) c", f=frames_per_batch)
             print("You are in the clip-level audio modeling")
 
         # Context Parallel
@@ -1056,6 +1062,8 @@ class WanTransformer3DFantasyModel(ModelMixin, ConfigMixin, FromOriginalModelMix
 
                         ckpt_kwargs: Dict[str, Any] = {"use_reentrant": False} if is_torch_version(">=",
                                                                                                    "1.11.0") else {}
+                        # Calculate latents_num_frames
+                        frames_per_batch = (video_sample_n_frames - 1) // 4 + 1
                         x = torch.utils.checkpoint.checkpoint(
                             create_custom_forward(block),
                             x,
@@ -1068,10 +1076,13 @@ class WanTransformer3DFantasyModel(ModelMixin, ConfigMixin, FromOriginalModelMix
                             dtype,
                             vocal_context,
                             vocal_context_lens,
+                            frames_per_batch,
                             **ckpt_kwargs,
                         )
                     else:
                         # arguments
+                        # Calculate latents_num_frames
+                        frames_per_batch = (video_sample_n_frames - 1) // 4 + 1
                         kwargs = dict(
                             e=e0,
                             seq_lens=seq_lens,
@@ -1082,6 +1093,7 @@ class WanTransformer3DFantasyModel(ModelMixin, ConfigMixin, FromOriginalModelMix
                             dtype=dtype,
                             vocal_context=vocal_context,
                             vocal_context_lens=vocal_context_lens,
+                            latents_num_frames=frames_per_batch,
                         )
                         x = block(x, **kwargs)
 
@@ -1100,6 +1112,8 @@ class WanTransformer3DFantasyModel(ModelMixin, ConfigMixin, FromOriginalModelMix
                         return custom_forward
 
                     ckpt_kwargs: Dict[str, Any] = {"use_reentrant": False} if is_torch_version(">=", "1.11.0") else {}
+                    # Calculate latents_num_frames
+                    frames_per_batch = (video_sample_n_frames - 1) // 4 + 1
                     x = torch.utils.checkpoint.checkpoint(
                         create_custom_forward(block),
                         x,
@@ -1112,10 +1126,13 @@ class WanTransformer3DFantasyModel(ModelMixin, ConfigMixin, FromOriginalModelMix
                         dtype,
                         vocal_context,
                         vocal_context_lens,
+                        frames_per_batch,
                         **ckpt_kwargs,
                     )
                 else:
                     # arguments
+                    # Calculate latents_num_frames
+                    frames_per_batch = (video_sample_n_frames - 1) // 4 + 1
                     kwargs = dict(
                         e=e0,
                         seq_lens=seq_lens,
@@ -1126,6 +1143,7 @@ class WanTransformer3DFantasyModel(ModelMixin, ConfigMixin, FromOriginalModelMix
                         dtype=dtype,
                         vocal_context=vocal_context,
                         vocal_context_lens=vocal_context_lens,
+                        latents_num_frames=frames_per_batch,
                     )
                     x = block(x, **kwargs)
 
