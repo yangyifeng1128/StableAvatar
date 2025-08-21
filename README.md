@@ -426,7 +426,7 @@ For the 5s video (480x832, fps=25), the basic model (--GPU_memory_mode="model_fu
 <b>🔥🔥Theoretically, StableAvatar is capable of synthesizing hours of video without significant quality degradation; however, the 3D VAE decoder demands significant GPU memory, especially when decoding 10k+ frames. You have the option to run the VAE decoder on CPU.🔥🔥</b>
 
 ## Contact
-If you have any suggestions or find our work helpful, feel free to contact me
+If you have any suggestions or find our work helpful, feel free to contact me.
 
 Email: francisshuyuan@gmail.com
 
