@@ -4,7 +4,7 @@
 
 StableAvatar: Infinite-Length Audio-Driven Avatar Video Generation
 <br/>
-*Shuyuan Tu<sup>1</sup>, Yueming Pan<sup>3</sup>, Yinming Huang<sup>1</sup>, Xintong Han<sup>4</sup>, Zhen Xing<sup>1</sup>, Qi Dai<sup>2</sup>, Chong Luo<sup>2</sup>, Zuxuan Wu<sup>1</sup>, Yu-Gang Jiang<sup>1</sup>
+Shuyuan Tu<sup>1</sup>, Yueming Pan<sup>3</sup>, Yinming Huang<sup>1</sup>, Xintong Han<sup>4</sup>, Zhen Xing<sup>1</sup>, Qi Dai<sup>2</sup>, Chong Luo<sup>2</sup>, Zuxuan Wu<sup>1</sup>, Yu-Gang Jiang<sup>1</sup>
 <br/>
 [<sup>1</sup>Fudan University; <sup>2</sup>Microsoft Research Asia; <sup>3</sup>Xi'an Jiaotong University; <sup>4</sup>Tencent Inc]
 
