@@ -425,7 +425,7 @@ You can modify `--rank` and `--network_alpha` to control the quality of your lor
 
 For the 5s video (480x832, fps=25), the basic model (--GPU_memory_mode="model_full_load") requires approximately 18GB VRAM and finishes in 3 minutes on a 4090 GPU.
 
-<b>🔥🔥Theoretically, StableAvatar is capable of synthesizing hours of video without significant quality degradation; however, the 3D VAE decoder demands significant GPU memory, especially when decoding 10k+ frames. You have the option to run the VAE decoder on CPU.🔥🔥</b>
+<b>🔥🔥Theoretically, StableAvatar is capable of synthesizing hours of video without significant quality degradation; however, the 3D VAE decoder demands significant GPU memory, especially when decoding 10k+ frames. You have the option to run the VAE on CPU.🔥🔥</b>
 
 ## Contact
 If you have any suggestions or find our work helpful, feel free to contact me.
