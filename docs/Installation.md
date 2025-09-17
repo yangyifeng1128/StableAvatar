@@ -137,6 +137,6 @@ chmod +x multiple_gpu_inference.sh
 # 在线服务
 uv run app.py
 
-apt-get install ffmpeg
-ffmpeg -i video_without_audio.mp4 -i /root/autodl-tmp/StableAvatar/audio.wav -c:v copy -c:a aac -shortest /root/autodl-tmp/StableAvatar/output_with_audio.mp4
+apt-get install -y ffmpeg
+ffmpeg -i /root/autodl-tmp/StableAvatar/output/video_without_audio.mp4 -i /root/autodl-tmp/StableAvatar/examples/case-1/audio.wav -c:v copy -c:a aac -shortest /root/autodl-tmp/StableAvatar/output/video_with_audio.mp4
 ```
