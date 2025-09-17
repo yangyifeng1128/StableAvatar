@@ -116,3 +116,20 @@ uv sync
 mkdir checkpoints
 uv run hf download FrancisRing/StableAvatar --local-dir ./checkpoints
 ```
+
+```sh
+mkdir output
+
+uv run audio_extractor.py --video_path="./output/video.mp4" --saved_audio_path=".output/audio.wav"
+
+uv run vocal_seperator.py --audio_separator_model_file="path/StableAvatar/checkpoints/Kim_Vocal_2.onnx" --audio_file_path="path/test/audio.wav" --saved_vocal_path="path/test/vocal.wav"
+
+./inference.sh
+
+./multiple_gpu_inference.sh
+
+uv run app.py
+
+apt-get install ffmpeg
+ffmpeg -i video_without_audio.mp4 -i /path/audio.wav -c:v copy -c:a aac -shortest /path/output_with_audio.mp4
+```
