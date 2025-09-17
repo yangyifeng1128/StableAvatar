@@ -126,10 +126,12 @@ uv run audio_extractor.py --video_path="/root/autodl-tmp/StableAvatar/output/vid
 # 分离人声
 uv run vocal_seperator.py --audio_separator_model_file="/root/autodl-tmp/StableAvatar/checkpoints/Kim_Vocal_2.onnx" --audio_file_path="/root/autodl-tmp/StableAvatar/output/audio.wav" --saved_vocal_path="/root/autodl-tmp/StableAvatar/output/vocal.wav"
 
-# 推理
+# 单 GPU 推理
+chmod +x inference.sh
 ./inference.sh
 
 # 多 GPU 推理
+chmod +x multiple_gpu_inference.sh
 ./multiple_gpu_inference.sh
 
 # 在线服务

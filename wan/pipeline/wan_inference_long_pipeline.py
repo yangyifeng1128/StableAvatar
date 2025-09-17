@@ -229,11 +229,9 @@ class WanI2VTalkingInferenceLongPipeline(DiffusionPipeline):
         self.video_processor = VideoProcessor(vae_scale_factor=self.vae.config.spacial_compression_ratio)
         self.image_processor = VaeImageProcessor(vae_scale_factor=self.vae.config.spacial_compression_ratio)
         self.mask_processor = VaeImageProcessor(
-            vae_scale_factor=self.vae.spacial_compression_ratio, do_normalize=False, do_binarize=True,
+            vae_scale_factor=self.vae.config.spacial_compression_ratio, do_normalize=False, do_binarize=True,
             do_convert_grayscale=True
         )
-
-
 
     def _get_t5_prompt_embeds(
             self,
