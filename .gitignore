@@ -1,0 +1,40 @@
+# Git 忽略文件
+# 参考资料：
+# - https://docs.github.com/en/get-started/git-basics/ignoring-files
+# - https://github.com/github/gitignore/blob/main/Python.gitignore
+
+# ==================== 操作系统 ====================
+
+.DS_Store
+
+# ==================== 虚拟环境 ====================
+
+.venv/
+
+# ==================== 日志文件 ====================
+
+logs/
+*.log
+
+# ==================== 环境变量配置文件 ====================
+
+.env
+.env.local
+.env.development
+.env.production
+.env.staging
+.env.test
+
+# ==================== 构建产物 ====================
+
+# -------------------- Python --------------------
+
+__pycache__/
+
+# -------------------- Ruff --------------------
+
+.ruff_cache/
+
+# ==================== 项目相关文件  ====================
+
+checkpoints/
