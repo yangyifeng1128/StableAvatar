@@ -2805,7 +2805,6 @@ requires-dist = [
     { name = "ninja" },
     { name = "numpy", specifier = ">=1.23.5,<2" },
     { name = "omegaconf" },
-    { name = "opencv-python" },
     { name = "opencv-python", specifier = ">=4.9.0.80" },
     { name = "pillow" },
     { name = "safetensors" },
