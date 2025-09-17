@@ -1,0 +1,68 @@
+[project]
+name = "stableavatar"
+version = "1.0.0"
+description = "Description"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "ninja",
+    "Pillow",
+    "einops",
+    "safetensors",
+    "timm",
+    "tomesd",
+    "torch==2.7.0",
+    "torchaudio==2.7.0",
+    "torchdiffeq",
+    "torchsde",
+    "torchvision==0.22.0",
+    "decord",
+    "datasets",
+    "opencv-python>=4.9.0.80",
+    "diffusers==0.30.1",
+    "transformers==4.51.3",
+    "tokenizers>=0.20.3",
+    "accelerate>=1.1.1",
+    "tqdm",
+    "easydict",
+    "ftfy",
+    "dashscope",
+    "imageio-ffmpeg",
+    "gradio>=5.0.0",
+    "numpy>=1.23.5,<2",
+    "scikit-image",
+    "opencv-python",
+    "omegaconf",
+    "SentencePiece",
+    "albumentations",
+    "imageio[ffmpeg]",
+    "imageio[pyav]",
+    "tensorboard",
+    "beautifulsoup4",
+    "ftfy",
+    "librosa",
+    "moviepy==1.0.3",
+    "huggingface-hub[cli]>=0.34.5",
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.format]
+docstring-code-format = true
+indent-style = "space"
+quote-style = "double"
+
+[tool.ruff.lint]
+select = ["F"]
+ignore = []
+
+[tool.uv]
+compile-bytecode = true
+index-url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
+
+[tool.uv.extra-build-dependencies]
+flash-attn = ["numpy", "torch"]
+
+[tool.uv.pip]
+index-url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"

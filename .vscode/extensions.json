@@ -1,0 +1,13 @@
+{
+  "recommendations": [
+    "vscode-icons-team.vscode-icons",
+    "ms-azuretools.vscode-containers",
+    "ms-azuretools.vscode-docker",
+    "yzhang.markdown-all-in-one",
+    "editorconfig.editorconfig",
+    "ms-python.python",
+    "charliermarsh.ruff",
+    "tamasfe.even-better-toml",
+    "bubaley.uv-versions-manager"
+  ]
+}

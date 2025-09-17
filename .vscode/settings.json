@@ -1,0 +1,52 @@
+{
+  "_comment_for_explorer": "// 资源管理器",
+
+  "explorer.confirmDelete": false,
+
+  "files.exclude": {
+    // "**/.venv": true,
+    "**/__pycache__": true
+  },
+
+  "_comment_for_editor": "// 编辑器",
+
+  "editor.codeActionsOnSave": {
+    "source.fixAll": "explicit",
+    "source.organizeImports": "explicit"
+  },
+  "[markdown]": {
+    "editor.defaultFormatter": "yzhang.markdown-all-in-one"
+  },
+  "[dockerfile]": {
+    "editor.defaultFormatter": "ms-azuretools.vscode-containers"
+  },
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff"
+  },
+  "editor.fontFamily": "JetBrains Mono, PingFang SC, Microsoft YaHei",
+  "editor.fontSize": 14,
+  "editor.formatOnSave": true,
+
+  "terminal.integrated.fontFamily": "JetBrains Mono, PingFang SC, Microsoft YaHei",
+  "terminal.integrated.fontSize": 14,
+
+  "markdown.preview.fontSize": 15,
+
+  "_comment_for_git": "// Git",
+
+  "git.confirmSync": false,
+  "git.enableSmartCommit": true,
+  "git.openRepositoryInParentFolders": "always",
+
+  "_comment_for_vscode-icons-team.vscode-icons": "// 图标",
+
+  "workbench.iconTheme": "vscode-icons",
+
+  "_comment_for_json": "// JSON",
+
+  "json.format.enable": false,
+
+  "_comment_for_python": "// Python",
+
+  "python.analysis.typeCheckingMode": "standard"
+}
