@@ -60,8 +60,5 @@ ignore = []
 compile-bytecode = true
 index-url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
 
-[tool.uv.extra-build-dependencies]
-flash-attn = ["numpy", "torch"]
-
 [tool.uv.pip]
 index-url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
